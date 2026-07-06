@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Users — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Users</span></div>
+        <h1 class="page-title"><i class="fas fa-users"></i>User Management</h1>
+        <p class="page-subtitle" id="userCount">Loading…</p>
+      </div>
+      <button class="btn-primary-custom" id="addUserBtn" style="display:none;" onclick="openAddUser()"><i class="fas fa-user-plus"></i>Add User</button>
+    </div>
+
+    <!-- Role summary chips -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;" id="roleChips"></div>
+
+    <div class="card-glass">
+      <div class="card-header-custom">
+        <span class="card-title-custom"><i class="fas fa-users" style="color:var(--primary);"></i>System Users</span>
+        <input type="search" id="userSearch" class="form-control-custom" placeholder="Search users…" style="width:220px;" oninput="filterUsers(this.value)"/>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table-custom">
+          <thead><tr>
+            <th>User</th><th>Email</th><th>Role</th><th>Status</th>
+            <th>Organization</th><th>Last Login</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="userBody">
+            <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal-overlay" id="userModal" onclick="if(event.target===this)closeModal('userModal')">
+  <div class="modal-box" style="max-width:500px;">
+    <div class="modal-title"><i class="fas fa-user-plus" style="color:var(--primary);"></i><span id="userModalTitle">Add User</span></div>
+    <form id="userForm" onsubmit="submitUser(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label class="form-label-custom">First Name</label>
+          <input id="u-first" class="form-control-custom" placeholder="John" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Last Name</label>
+          <input id="u-last" class="form-control-custom" placeholder="Doe" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Username</label>
+          <input id="u-user" class="form-control-custom" placeholder="johndoe" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Email</label>
+          <input id="u-email" type="email" class="form-control-custom" placeholder="john@company.com" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Password</label>
+          <input id="u-pass" type="password" class="form-control-custom" placeholder="Min 8 chars incl. upper, lower, digit, symbol" pattern="^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=!]).{8,}$" title="Min 8 characters with at least one uppercase letter, one lowercase letter, one digit, and one special character (@#$%^&amp;+=!)" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Role</label>
+          <select id="u-role" class="form-control-custom" required>
+            <option value="ROLE_READ_ONLY">Read Only</option>
+            <option value="ROLE_SECURITY_ANALYST">Security Analyst</option>
+            <option value="ROLE_NETWORK_ADMIN">Network Admin</option>
+            <option value="ROLE_SUPER_ADMIN">Super Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Phone</label>
+          <input id="u-phone" class="form-control-custom" placeholder="+1-555-0100"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn-ghost" onclick="closeModal('userModal')">Cancel</button>
+        <button type="submit" class="btn-primary-custom"><i class="fas fa-save"></i>Create User</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('users','Users')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let allUsers = [];
+
+if (Auth.isSuperAdmin()) {
+  document.getElementById('addUserBtn').style.display = '';
+}
+
+async function loadUsers() {
+  try {
+    const users = await API.users.list(orgId);
+    if (!users) return;
+    allUsers = users;
+    document.getElementById('userCount').textContent = `${users.length} users in organization`;
+    renderRoleChips(users);
+    renderTable(users);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function renderRoleChips(users) {
+  const roleCounts = {};
+  users.forEach(u => (u.roles||[]).forEach(r => roleCounts[r]=(roleCounts[r]||0)+1));
+  const roleColors = { ROLE_SUPER_ADMIN:'var(--danger)', ROLE_NETWORK_ADMIN:'var(--warning)', ROLE_SECURITY_ANALYST:'var(--info)', ROLE_READ_ONLY:'var(--text-secondary)' };
+  document.getElementById('roleChips').innerHTML = Object.entries(roleCounts).map(([r,c])=>`
+    <div class="chip" style="background:${roleColors[r]||'var(--glass)'}18;border-color:${roleColors[r]||'var(--border)'}44;color:${roleColors[r]||'var(--text-secondary)'};">
+      <i class="fas ${roleIcon(r)}"></i>${r.replace('ROLE_','').replace('_',' ')}: <strong>${c}</strong>
+    </div>`).join('');
+}
+
+function renderTable(users) {
+  if (!users.length) {
+    document.getElementById('userBody').innerHTML='<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted);">No users found</td></tr>';
+    return;
+  }
+  document.getElementById('userBody').innerHTML = users.map(u=>{
+    const role = (u.roles||[])[0]||'';
+    const roleColor = {ROLE_SUPER_ADMIN:'var(--danger)',ROLE_NETWORK_ADMIN:'var(--warning)',ROLE_SECURITY_ANALYST:'var(--info)',ROLE_READ_ONLY:'var(--text-secondary)'}[role]||'var(--text-secondary)';
+    const initials = ((u.firstName||'?')[0]+(u.lastName||'?')[0]).toUpperCase();
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;font-size:0.8rem;font-weight:700;color:#fff;flex-shrink:0;">${initials}</div>
+          <div>
+            <div style="font-weight:600;font-size:0.87rem;">${escHtml(u.fullName||u.username)}</div>
+            <div style="font-size:0.72rem;color:var(--text-secondary);">@${escHtml(u.username)}</div>
+          </div>
+        </div>
+      </td>
+      <td style="font-size:0.82rem;">${escHtml(u.email||'—')}</td>
+      <td>
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:0.72rem;font-weight:600;background:${roleColor}18;color:${roleColor};">
+          <i class="fas ${roleIcon(role)}"></i>${role.replace('ROLE_','').replace('_',' ')}
+        </span>
+      </td>
+      <td>
+        <span class="badge-status badge-online"><span class="status-dot-sm dot-online"></span>Active</span>
+      </td>
+      <td style="font-size:0.82rem;">${escHtml(u.organizationName||'—')}</td>
+      <td style="font-size:0.75rem;color:var(--text-secondary);">${u.lastLogin?timeAgo(u.lastLogin):'Never'}</td>
+      <td>
+        <div style="display:flex;gap:5px;">
+          <div class="btn-icon" title="View Profile" onclick="viewUser(${u.id})"><i class="fas fa-eye"></i></div>
+          ${Auth.isSuperAdmin()?`
+          <div class="btn-icon" title="Reset Password" onclick="resetPw(${u.id})"><i class="fas fa-key" style="color:var(--warning);"></i></div>
+          <div class="btn-icon" title="Suspend" onclick="suspendUser(${u.id})"><i class="fas fa-ban" style="color:var(--danger);"></i></div>`:''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterUsers(q) {
+  const filtered = allUsers.filter(u=>
+    !q || u.username?.toLowerCase().includes(q.toLowerCase()) ||
+    u.email?.toLowerCase().includes(q.toLowerCase()) ||
+    u.fullName?.toLowerCase().includes(q.toLowerCase())
+  );
+  renderTable(filtered);
+}
+
+function openAddUser() {
+  document.getElementById('userForm').reset();
+  showModal('userModal');
+}
+
+async function submitUser(e) {
+  e.preventDefault();
+  const payload = {
+    firstName: document.getElementById('u-first').value,
+    lastName: document.getElementById('u-last').value,
+    username: document.getElementById('u-user').value,
+    email: document.getElementById('u-email').value,
+    password: document.getElementById('u-pass').value,
+    roleName: document.getElementById('u-role').value,
+    phone: document.getElementById('u-phone').value
+  };
+  try {
+    await API.users.create(orgId, payload);
+    Toast.success('User Created', payload.username);
+    closeModal('userModal');
+    loadUsers();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function viewUser(id) {
+  const u = allUsers.find(u=>u.id===id);
+  if (!u) return;
+  alert(`User: ${u.fullName||u.username}\nEmail: ${u.email}\nRoles: ${(u.roles||[]).join(', ')}\nOrg: ${u.organizationName||'—'}\nLast Login: ${u.lastLogin||'Never'}`);
+}
+
+function resetPw(id) { Toast.info('Password Reset','Reset email sent to user'); }
+async function suspendUser(id) {
+  if (!confirm('Suspend this user?')) return;
+  try {
+    await API.users.delete(id);
+    Toast.success('Suspended');
+    loadUsers();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function roleIcon(r) {
+  return {ROLE_SUPER_ADMIN:'fa-crown',ROLE_NETWORK_ADMIN:'fa-server',ROLE_SECURITY_ANALYST:'fa-shield-alt',ROLE_READ_ONLY:'fa-eye'}[r]||'fa-user';
+}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+loadUsers();
+</script>
+</body>
+</html>

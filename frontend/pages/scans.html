@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Network Scans — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Scans</span></div>
+        <h1 class="page-title"><i class="fas fa-search-location"></i>Network Discovery Scans</h1>
+        <p class="page-subtitle">Automatically discover and map all devices on your network</p>
+      </div>
+      <button class="btn-primary-custom" onclick="openScanModal()"><i class="fas fa-play"></i>New Scan</button>
+    </div>
+
+    <!-- Active scan progress -->
+    <div id="activeScanCard" style="display:none;" class="card-glass" style="margin-bottom:16px;">
+      <div class="card-body-custom">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div style="width:42px;height:42px;border:3px solid rgba(108,99,255,0.2);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:0.92rem;">Scanning network… <span id="scanPct">0</span>%</div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);" id="scanMsgActive">Initializing discovery…</div>
+            <div class="progress-bar-custom" style="height:6px;margin-top:8px;">
+              <div class="progress-fill" id="activeScanBar" style="width:0%;"></div>
+            </div>
+          </div>
+          <button class="btn-ghost" onclick="cancelActiveScan()"><i class="fas fa-times"></i>Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scan history table -->
+    <div class="card-glass">
+      <div class="card-header-custom">
+        <span class="card-title-custom"><i class="fas fa-history" style="color:var(--primary);"></i>Scan History</span>
+        <button class="btn-ghost" style="font-size:0.78rem;" onclick="loadScans()"><i class="fas fa-sync-alt"></i>Refresh</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table-custom">
+          <thead><tr>
+            <th>Scan Name</th><th>Target Network</th><th>Status</th>
+            <th>Devices Found</th><th>Duration</th><th>Initiated By</th>
+            <th>Started</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="scanBody">
+            <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Discovery tips -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:20px;">
+      <div class="card-glass" style="padding:16px;">
+        <div style="font-size:1.5rem;color:var(--primary);margin-bottom:8px;"><i class="fas fa-network-wired"></i></div>
+        <div style="font-weight:700;font-size:0.88rem;margin-bottom:4px;">Full Network Scan</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">Scans all 254 hosts on a /24 subnet. Best for initial discovery.</div>
+        <button class="btn-ghost" style="margin-top:12px;width:100%;font-size:0.78rem;" onclick="quickScan('192.168.1.0/24')"><i class="fas fa-play"></i>Run 192.168.1.0/24</button>
+      </div>
+      <div class="card-glass" style="padding:16px;">
+        <div style="font-size:1.5rem;color:var(--accent);margin-bottom:8px;"><i class="fas fa-bolt"></i></div>
+        <div style="font-weight:700;font-size:0.88rem;margin-bottom:4px;">Quick Ping Sweep</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">Fast ICMP sweep to find online hosts. Ideal for quick health checks.</div>
+        <button class="btn-ghost" style="margin-top:12px;width:100%;font-size:0.78rem;" onclick="quickScan('192.168.0.0/24')"><i class="fas fa-play"></i>Run 192.168.0.0/24</button>
+      </div>
+      <div class="card-glass" style="padding:16px;">
+        <div style="font-size:1.5rem;color:var(--warning);margin-bottom:8px;"><i class="fas fa-shield-alt"></i></div>
+        <div style="font-weight:700;font-size:0.88rem;margin-bottom:4px;">Security Port Scan</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">Checks for open ports and vulnerabilities on discovered hosts.</div>
+        <button class="btn-ghost" style="margin-top:12px;width:100%;font-size:0.78rem;" onclick="quickScan('10.0.0.0/24')"><i class="fas fa-play"></i>Run 10.0.0.0/24</button>
+      </div>
+      <div class="card-glass" style="padding:16px;">
+        <div style="font-size:1.5rem;color:var(--success);margin-bottom:8px;"><i class="fas fa-clock"></i></div>
+        <div style="font-weight:700;font-size:0.88rem;margin-bottom:4px;">Scheduled Scans</div>
+        <div style="font-size:0.78rem;color:var(--text-secondary);">Automatic discovery runs every hour to keep topology up to date.</div>
+        <button class="btn-ghost" style="margin-top:12px;width:100%;font-size:0.78rem;" onclick="Toast.info('Scheduling','Configure in Settings → Scan Schedule')"><i class="fas fa-calendar"></i>Configure</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Scan Modal -->
+<div class="modal-overlay" id="scanModal" onclick="if(event.target===this)closeModal('scanModal')">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-title"><i class="fas fa-search-location" style="color:var(--primary);"></i>New Network Scan</div>
+    <div class="form-group">
+      <label class="form-label-custom">Target Network (CIDR)</label>
+      <input id="scanNetwork" class="form-control-custom" value="192.168.1.0/24" placeholder="192.168.1.0/24"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label-custom">Scan Type</label>
+      <select id="scanType" class="form-control-custom">
+        <option value="FULL">Full Discovery Scan</option>
+        <option value="PING">Quick Ping Sweep</option>
+        <option value="SECURITY">Security Port Scan</option>
+      </select>
+    </div>
+    <div style="background:rgba(108,99,255,0.08);border:1px solid rgba(108,99,255,0.2);border-radius:10px;padding:12px;margin-bottom:16px;">
+      <div style="font-size:0.78rem;color:var(--text-secondary);"><i class="fas fa-info-circle" style="color:var(--primary);"></i> Scan will discover all active hosts, their hostnames, MAC addresses, vendors, and open ports. Results are automatically added to device inventory.</div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn-ghost" onclick="closeModal('scanModal')">Cancel</button>
+      <button class="btn-primary-custom" onclick="startScan()"><i class="fas fa-play"></i>Start Scan</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('scans','Scans')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let activeScanId = null, pollTimer = null;
+
+async function loadScans() {
+  try {
+    const scans = await API.scans.list(orgId);
+    if (!scans) return;
+    const body = document.getElementById('scanBody');
+    if (!scans.length) { body.innerHTML='<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">No scans yet. Click "New Scan" to discover devices.</td></tr>'; return; }
+    const statusColors = {COMPLETED:'badge-online',RUNNING:'badge-warning',FAILED:'badge-offline',PENDING:'badge-unknown',CANCELLED:'badge-maintenance'};
+    const statusDots   = {COMPLETED:'dot-online',RUNNING:'dot-warning',FAILED:'dot-offline',PENDING:'',CANCELLED:''};
+    body.innerHTML = scans.map(s=>`
+      <tr>
+        <td style="font-weight:600;font-size:0.85rem;">${escHtml(s.scanName||'Scan #'+s.id)}</td>
+        <td><code style="background:var(--glass);padding:2px 7px;border-radius:5px;font-size:0.8rem;">${s.targetNetwork||'—'}</code></td>
+        <td><span class="badge-status ${statusColors[s.status]||'badge-unknown'}"><span class="status-dot-sm ${statusDots[s.status]||''}"></span>${s.status}</span></td>
+        <td style="font-weight:700;color:var(--success);">${s.devicesFound||0}</td>
+        <td style="font-size:0.8rem;">${s.durationSeconds!=null?s.durationSeconds+'s':'—'}</td>
+        <td style="font-size:0.8rem;color:var(--text-secondary);">${escHtml(s.initiatedBy||'—')}</td>
+        <td style="font-size:0.75rem;color:var(--text-secondary);">${timeAgo(s.startedAt||s.createdAt)}</td>
+        <td>
+          ${s.status==='COMPLETED'?`<button class="btn-ghost" style="font-size:0.75rem;" onclick="viewScanResult('${s.id}')"><i class="fas fa-eye"></i>View</button>`:''}
+          ${s.status==='RUNNING'?`<button class="btn-ghost" style="font-size:0.75rem;" onclick="pollScanProgress(${s.id})"><i class="fas fa-sync-alt fa-spin"></i>Watching</button>`:''}
+        </td>
+      </tr>`).join('');
+
+    // Auto-watch any running scans
+    const running = scans.find(s=>s.status==='RUNNING'||s.status==='PENDING');
+    if (running) pollScanProgress(running.id);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function openScanModal() { showModal('scanModal'); }
+
+async function startScan() {
+  const net = document.getElementById('scanNetwork').value.trim();
+  if (!net) { Toast.warning('Validation','Enter a target network'); return; }
+  closeModal('scanModal');
+  try {
+    const scan = await API.scans.start(orgId, net);
+    Toast.success('Scan Started', `Scanning ${net}…`);
+    activeScanId = scan.id;
+    document.getElementById('activeScanCard').style.display='block';
+    pollScanProgress(scan.id);
+    loadScans();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function quickScan(net) {
+  document.getElementById('scanNetwork').value = net;
+  startScan();
+}
+
+async function pollScanProgress(id) {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const s = await API.scans.status(id);
+      const pct = s.progressPercent||0;
+      document.getElementById('scanPct').textContent = pct;
+      document.getElementById('activeScanBar').style.width = pct+'%';
+      document.getElementById('scanMsgActive').textContent = s.status==='COMPLETED' ? `✅ Found ${s.devicesFound} devices` : s.scanResult||`Scanning… ${pct}%`;
+      if (s.status!=='RUNNING' && s.status!=='PENDING') {
+        clearInterval(pollTimer);
+        setTimeout(()=>{ document.getElementById('activeScanCard').style.display='none'; },3000);
+        if (s.status==='COMPLETED') { Toast.success('Scan Complete', `${s.devicesFound} devices found`); loadScans(); }
+        else if (s.status==='FAILED') { Toast.error('Scan Failed', s.errorMessage||'Unknown error'); }
+      }
+    } catch { clearInterval(pollTimer); }
+  }, 1500);
+}
+
+function cancelActiveScan() {
+  clearInterval(pollTimer);
+  document.getElementById('activeScanCard').style.display='none';
+  Toast.info('Cancelled', 'Scan monitoring stopped');
+}
+
+function viewScanResult(id) { Toast.info('Results', 'Check Devices page for newly discovered devices'); }
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+loadScans();
+setInterval(loadScans, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Audit Logs — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Audit Logs</span></div>
+        <h1 class="page-title"><i class="fas fa-history"></i>Audit Logs</h1>
+        <p class="page-subtitle">Complete trail of all user actions and system events</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="exportLogs()"><i class="fas fa-download"></i>Export</button>
+        <button class="btn-ghost" onclick="loadLogs()"><i class="fas fa-sync-alt"></i>Refresh</button>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+      <select id="catFilter" class="form-control-custom" style="width:auto;" onchange="loadLogs()">
+        <option value="">All Categories</option>
+        <option>AUTH</option><option>DEVICE</option><option>NETWORK</option>
+        <option>SECURITY</option><option>USER_MANAGEMENT</option><option>CONFIGURATION</option>
+      </select>
+      <select id="levelFilter" class="form-control-custom" style="width:auto;" onchange="loadLogs()">
+        <option value="">All Levels</option>
+        <option>INFO</option><option>WARNING</option><option>ERROR</option><option>CRITICAL</option>
+      </select>
+      <input type="search" id="logSearch" class="form-control-custom" placeholder="Search by user, action…" style="min-width:220px;" oninput="filterLogs(this.value)"/>
+    </div>
+
+    <div class="card-glass">
+      <div style="overflow-x:auto;">
+        <table class="table-custom">
+          <thead><tr>
+            <th>Timestamp</th><th>Action</th><th>Category</th><th>User</th>
+            <th>Entity</th><th>IP Address</th><th>Level</th><th>Description</th>
+          </tr></thead>
+          <tbody id="logBody">
+            <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" style="padding:14px 20px;">
+        <span id="logPagInfo">—</span>
+        <div class="page-btns" id="logPagBtns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('auditlogs','Audit Logs')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let currentPage=0, allLogs=[];
+
+async function loadLogs(page=0) {
+  currentPage=page;
+  try {
+    const res = await API.auditLogs(orgId, page);
+    if (!res) return;
+    const logs = res.content||[];
+    allLogs = logs;
+    renderLogs(logs);
+    const total=res.totalPages||1, count=res.totalElements||0;
+    document.getElementById('logPagInfo').textContent=`Page ${page+1} of ${total} (${count} events)`;
+    let html=`<div class="page-btn" onclick="loadLogs(${Math.max(0,page-1)})"><i class="fas fa-chevron-left"></i></div>`;
+    for(let i=0;i<Math.min(total,7);i++) html+=`<div class="page-btn ${i===page?'active':''}" onclick="loadLogs(${i})">${i+1}</div>`;
+    html+=`<div class="page-btn" onclick="loadLogs(${Math.min(total-1,page+1)})"><i class="fas fa-chevron-right"></i></div>`;
+    document.getElementById('logPagBtns').innerHTML=html;
+  } catch(e) {
+    Toast.error('Error', e.message);
+    // Show empty state
+    document.getElementById('logBody').innerHTML='<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">No audit logs yet. Logs appear after users perform actions.</td></tr>';
+  }
+}
+
+function renderLogs(logs) {
+  if (!logs.length) {
+    document.getElementById('logBody').innerHTML='<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">No logs found</td></tr>';
+    return;
+  }
+  const catColors={AUTH:'var(--accent)',DEVICE:'var(--info)',NETWORK:'var(--success)',SECURITY:'var(--danger)',USER_MANAGEMENT:'var(--warning)',CONFIGURATION:'var(--purple)',SYSTEM:'var(--text-secondary)'};
+  const actionIcons={LOGIN:'fa-sign-in-alt',LOGOUT:'fa-sign-out-alt',CREATE:'fa-plus-circle',UPDATE:'fa-edit',DELETE:'fa-trash',VIEW:'fa-eye'};
+  const levelColors={INFO:'var(--info)',WARNING:'var(--warning)',ERROR:'var(--danger)',CRITICAL:'var(--danger)'};
+  document.getElementById('logBody').innerHTML = logs.map(l=>`
+    <tr>
+      <td style="font-size:0.75rem;color:var(--text-secondary);white-space:nowrap;">${l.createdAt?new Date(l.createdAt).toLocaleString():'—'}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:7px;">
+          <i class="fas ${actionIcons[l.action]||'fa-info-circle'}" style="color:${catColors[l.category]||'var(--text-secondary)'};font-size:0.8rem;"></i>
+          <span style="font-size:0.83rem;font-weight:600;">${escHtml(l.action||'—')}</span>
+        </div>
+      </td>
+      <td><span class="chip" style="font-size:0.68rem;color:${catColors[l.category]||'var(--text-secondary)'};">${l.category||'SYSTEM'}</span></td>
+      <td style="font-size:0.82rem;font-weight:500;">${escHtml(l.performedBy||'system')}</td>
+      <td style="font-size:0.78rem;color:var(--text-secondary);">${escHtml(l.entityType||'—')} ${l.entityName?'· '+escHtml(l.entityName):''}</td>
+      <td style="font-size:0.75rem;color:var(--text-secondary);font-family:monospace;">${escHtml(l.ipAddress||'—')}</td>
+      <td><span style="font-size:0.72rem;font-weight:700;color:${levelColors[l.level]||'var(--info)'};">${l.level||'INFO'}</span></td>
+      <td style="font-size:0.78rem;color:var(--text-secondary);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(l.description||'—')}</td>
+    </tr>`).join('');
+}
+
+function filterLogs(q) {
+  const filtered = allLogs.filter(l=>!q||l.action?.toLowerCase().includes(q.toLowerCase())||l.performedBy?.toLowerCase().includes(q.toLowerCase())||l.description?.toLowerCase().includes(q.toLowerCase()));
+  renderLogs(filtered);
+}
+
+function exportLogs() {
+  const headers=['Time','Action','Category','User','Entity','IP','Level','Description'];
+  const rows=allLogs.map(l=>[l.createdAt,l.action,l.category,l.performedBy,l.entityType,l.ipAddress,l.level,l.description]);
+  const csv=[headers,...rows].map(r=>r.map(c=>`"${c||''}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='audit-logs.csv';a.click();
+  Toast.success('Exported','audit-logs.csv');
+}
+
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+loadLogs();
+</script>
+</body>
+</html>

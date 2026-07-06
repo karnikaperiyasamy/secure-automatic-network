@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Devices — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<style>
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;}
+.filter-bar input,.filter-bar select{background:var(--glass);border:1px solid var(--border);border-radius:10px;padding:8px 14px;color:var(--text);font-size:0.85rem;outline:none;transition:var(--transition);}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--primary);}
+.filter-bar input::placeholder{color:var(--text-muted);}
+.device-type-icon{width:30px;height:30px;border-radius:8px;background:var(--glass);display:flex;align-items:center;justify-content:center;font-size:0.82rem;flex-shrink:0;}
+.table-actions{display:flex;gap:6px;}
+.pagination-bar{display:flex;align-items:center;justify-content:space-between;padding:14px 0 0;font-size:0.82rem;color:var(--text-secondary);}
+.page-btns{display:flex;gap:6px;}
+.page-btn{width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--glass);color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:0.8rem;transition:var(--transition);}
+.page-btn:hover,.page-btn.active{background:var(--primary-light);border-color:var(--primary);color:var(--primary);}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Devices</span></div>
+        <h1 class="page-title"><i class="fas fa-server"></i>Device Management</h1>
+        <p class="page-subtitle" id="deviceCount">Loading…</p>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-ghost" onclick="exportCSV()"><i class="fas fa-download"></i>Export CSV</button>
+        <button class="btn-ghost" onclick="document.getElementById('csvFile').click()"><i class="fas fa-upload"></i>Import</button>
+        <input type="file" id="csvFile" accept=".csv" style="display:none" onchange="importCSV(this)"/>
+        <button class="btn-primary-custom" onclick="openAddModal()"><i class="fas fa-plus"></i>Add Device</button>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;" id="quickStats"></div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <input type="search" id="searchInput" placeholder="🔍  Search hostname, IP, MAC, vendor…" style="min-width:260px;" oninput="onSearch(this.value)"/>
+      <select id="filterType" onchange="applyFilters()">
+        <option value="">All Types</option>
+        <option>ROUTER</option><option>SWITCH</option><option>FIREWALL</option>
+        <option>SERVER</option><option>COMPUTER</option><option>PRINTER</option>
+        <option>ACCESS_POINT</option><option>IOT_DEVICE</option><option>VIRTUAL_MACHINE</option>
+      </select>
+      <select id="filterStatus" onchange="applyFilters()">
+        <option value="">All Status</option>
+        <option>ONLINE</option><option>OFFLINE</option><option>WARNING</option><option>CRITICAL</option><option>MAINTENANCE</option>
+      </select>
+      <button class="btn-ghost" onclick="clearFilters()"><i class="fas fa-times"></i>Clear</button>
+      <button class="btn-ghost" onclick="loadDevices()" style="margin-left:auto;"><i class="fas fa-sync-alt"></i>Refresh</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card-glass">
+      <div style="overflow-x:auto;">
+        <table class="table-custom" id="devTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"/></th>
+              <th>Device</th><th>IP Address</th><th>MAC</th><th>Type</th>
+              <th>Status</th><th>CPU</th><th>RAM</th><th>Latency</th>
+              <th>Last Seen</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="devTableBody">
+            <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading devices…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" style="padding:14px 20px;">
+        <span id="paginationInfo">—</span>
+        <div class="page-btns" id="pageBtns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Device Modal -->
+<div class="modal-overlay" id="deviceModal" onclick="if(event.target===this)closeModal('deviceModal')">
+  <div class="modal-box" style="max-width:580px;">
+    <div class="modal-title"><i class="fas fa-server" style="color:var(--primary);"></i><span id="modalTitle">Add Device</span></div>
+    <form id="deviceForm" onsubmit="submitDevice(event)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label class="form-label-custom">Hostname *</label>
+          <input id="f-hostname" class="form-control-custom" placeholder="srv-web-01" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">IP Address *</label>
+          <input id="f-ip" class="form-control-custom" placeholder="192.168.1.10" required pattern="^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">MAC Address</label>
+          <input id="f-mac" class="form-control-custom" placeholder="AA:BB:CC:DD:EE:FF"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Device Type</label>
+          <select id="f-type" class="form-control-custom">
+            <option value="UNKNOWN">Unknown</option>
+            <option value="ROUTER">Router</option><option value="SWITCH">Switch</option>
+            <option value="FIREWALL">Firewall</option><option value="SERVER">Server</option>
+            <option value="COMPUTER">Computer</option><option value="PRINTER">Printer</option>
+            <option value="ACCESS_POINT">Access Point</option><option value="IOT_DEVICE">IoT Device</option>
+            <option value="VIRTUAL_MACHINE">Virtual Machine</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Vendor</label>
+          <input id="f-vendor" class="form-control-custom" placeholder="Cisco, HP, Dell…"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Operating System</label>
+          <input id="f-os" class="form-control-custom" placeholder="Ubuntu 22.04"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Subnet</label>
+          <input id="f-subnet" class="form-control-custom" placeholder="192.168.1.0/24"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Gateway</label>
+          <input id="f-gateway" class="form-control-custom" placeholder="192.168.1.1"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">VLAN ID</label>
+          <input id="f-vlan" type="number" class="form-control-custom" placeholder="1"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label-custom">Network Name</label>
+          <input id="f-netname" class="form-control-custom" placeholder="Corporate-LAN"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label-custom">Description</label>
+        <textarea id="f-desc" class="form-control-custom" rows="2" placeholder="Optional description…" style="resize:vertical;"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label-custom">Tags (comma-separated)</label>
+        <input id="f-tags" class="form-control-custom" placeholder="production, critical, web-tier"/>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn-ghost" onclick="closeModal('deviceModal')">Cancel</button>
+        <button type="submit" class="btn-primary-custom" id="submitDevBtn"><i class="fas fa-save"></i>Save Device</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Device Detail Modal -->
+<div class="modal-overlay" id="deviceDetailModal" onclick="if(event.target===this)closeModal('deviceDetailModal')">
+  <div class="modal-box" style="max-width:620px;">
+    <div class="modal-title"><i class="fas fa-info-circle" style="color:var(--info);"></i>Device Details</div>
+    <div id="deviceDetailContent"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn-ghost" onclick="closeModal('deviceDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('devices','Devices')) throw new Error('Not auth');
+
+const orgId = Auth.getOrgId();
+let allDevices = [], currentPage = 0, totalPages = 0, editingId = null;
+
+// Check URL search param
+const urlQ = new URLSearchParams(location.search).get('q');
+if (urlQ) { setTimeout(()=>{ document.getElementById('searchInput').value=urlQ; onSearch(urlQ); },500); }
+
+async function loadDevices(page=0) {
+  currentPage = page;
+  try {
+    const res = urlQ
+      ? await API.devices.search(orgId, urlQ, page)
+      : await API.devices.list(orgId, page, 20);
+
+    if (!res) return;
+    allDevices = res.content || [];
+    totalPages = res.totalPages || 1;
+    const total = res.totalElements || 0;
+    document.getElementById('deviceCount').textContent = `${total} devices registered`;
+    renderTable(allDevices);
+    renderPagination(page, totalPages, total);
+    loadQuickStats();
+  } catch(e) { Toast.error('Load Error', e.message); }
+}
+
+async function loadQuickStats() {
+  try {
+    const stats = await API.devices.stats(orgId);
+    const items = [
+      {label:'Total', val:stats.total||0, color:'var(--primary)', icon:'fa-server'},
+      {label:'Online', val:stats.online||0, color:'var(--success)', icon:'fa-check-circle'},
+      {label:'Offline', val:stats.offline||0, color:'var(--danger)', icon:'fa-times-circle'},
+      {label:'Warning', val:stats.warning||0, color:'var(--warning)', icon:'fa-exclamation-triangle'},
+    ];
+    document.getElementById('quickStats').innerHTML = items.map(i=>`
+      <div class="chip" style="background:${i.color}18;border-color:${i.color}44;color:${i.color};font-size:0.8rem;padding:5px 14px;">
+        <i class="fas ${i.icon}"></i>${i.label}: <strong>${i.val}</strong>
+      </div>`).join('');
+  } catch {}
+}
+
+function renderTable(devices) {
+  if (!devices.length) {
+    document.getElementById('devTableBody').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text-muted);">No devices found</td></tr>';
+    return;
+  }
+  document.getElementById('devTableBody').innerHTML = devices.map(d => `
+    <tr>
+      <td><input type="checkbox" class="dev-cb" value="${d.id}"/></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="device-type-icon" style="background:${typeColor(d.deviceType)}18;color:${typeColor(d.deviceType)};"><i class="fas ${deviceTypeIcon(d.deviceType)}"></i></div>
+          <div>
+            <div style="font-weight:600;font-size:0.88rem;">${escHtml(d.hostname)}</div>
+            <div style="font-size:0.72rem;color:var(--text-secondary);">${escHtml(d.vendor||'—')} · ${escHtml(d.operatingSystem||'—')}</div>
+          </div>
+        </div>
+      </td>
+      <td><code style="background:var(--glass);padding:2px 7px;border-radius:5px;font-size:0.82rem;">${d.ipAddress}</code></td>
+      <td style="font-size:0.78rem;color:var(--text-secondary);">${d.macAddress||'—'}</td>
+      <td><span class="chip chip-primary" style="font-size:0.7rem;">${d.deviceType||'UNKNOWN'}</span></td>
+      <td>${statusBadge(d.status)}</td>
+      <td style="min-width:100px;">${cpuBar(d.cpuUsage||0)}</td>
+      <td style="min-width:100px;">${cpuBar(d.ramUsage||0)}</td>
+      <td style="font-size:0.8rem;color:${d.latencyMs>50?'var(--warning)':'var(--success)'};">${fmt(d.latencyMs)}ms</td>
+      <td style="font-size:0.75rem;color:var(--text-secondary);">${timeAgo(d.lastSeen)}</td>
+      <td>
+        <div class="table-actions">
+          <div class="btn-icon" title="View" onclick="viewDevice(${d.id})"><i class="fas fa-eye"></i></div>
+          ${Auth.isNetworkAdmin()?`
+          <div class="btn-icon" title="Edit" onclick="editDevice(${d.id})"><i class="fas fa-edit"></i></div>
+          <div class="btn-icon" title="${d.maintenanceMode?'Disable':'Enable'} Maintenance" onclick="toggleMaint(${d.id})" style="color:${d.maintenanceMode?'var(--warning)':'var(--text-secondary)'}"><i class="fas fa-wrench"></i></div>
+          <div class="btn-icon" title="Delete" onclick="deleteDevice(${d.id},'${escHtml(d.hostname)}')" style="color:var(--danger);"><i class="fas fa-trash"></i></div>`:''}
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function renderPagination(page, total, count) {
+  document.getElementById('paginationInfo').textContent = `Page ${page+1} of ${total} (${count} devices)`;
+  const btns = document.getElementById('pageBtns');
+  let html = `<div class="page-btn" onclick="loadDevices(${Math.max(0,page-1)})"><i class="fas fa-chevron-left"></i></div>`;
+  for (let i=0;i<total;i++) {
+    if (total <= 7 || Math.abs(i-page) <= 2 || i===0 || i===total-1) {
+      html += `<div class="page-btn ${i===page?'active':''}" onclick="loadDevices(${i})">${i+1}</div>`;
+    } else if (Math.abs(i-page)===3) {
+      html += '<div class="page-btn" style="cursor:default;border:none;">…</div>';
+    }
+  }
+  html += `<div class="page-btn" onclick="loadDevices(${Math.min(total-1,page+1)})"><i class="fas fa-chevron-right"></i></div>`;
+  btns.innerHTML = html;
+}
+
+let searchTimer;
+function onSearch(q) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadDevices(0), 400);
+}
+
+function applyFilters() { loadDevices(0); }
+function clearFilters() {
+  document.getElementById('searchInput').value='';
+  document.getElementById('filterType').value='';
+  document.getElementById('filterStatus').value='';
+  loadDevices(0);
+}
+
+function toggleSelectAll(cb) {
+  document.querySelectorAll('.dev-cb').forEach(c => c.checked = cb.checked);
+}
+
+async function viewDevice(id) {
+  try {
+    const d = await API.devices.get(id);
+    document.getElementById('deviceDetailContent').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        ${detailRow('Hostname', d.hostname)}${detailRow('IP Address', d.ipAddress)}
+        ${detailRow('MAC Address', d.macAddress||'—')}${detailRow('Type', d.deviceType)}
+        ${detailRow('Status', statusBadge(d.status))}${detailRow('Vendor', d.vendor||'—')}
+        ${detailRow('OS', d.operatingSystem||'—')}${detailRow('Subnet', d.subnet||'—')}
+        ${detailRow('Gateway', d.gateway||'—')}${detailRow('VLAN', d.vlanId||'—')}
+        ${detailRow('Network', d.networkName||'—')}${detailRow('Latency', fmt(d.latencyMs)+'ms')}
+        ${detailRow('Availability', fmt(d.availabilityPercent)+'%')}${detailRow('Security Score', d.securityScore)}
+        ${detailRow('Risk Score', d.riskScore)}${detailRow('First Discovered', new Date(d.firstDiscovered||Date.now()).toLocaleDateString())}
+      </div>
+      <div style="margin-top:16px;">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Performance</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div><div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px;">CPU ${fmt(d.cpuUsage)}%</div>${cpuBar(d.cpuUsage||0)}</div>
+          <div><div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px;">RAM ${fmt(d.ramUsage)}%</div>${cpuBar(d.ramUsage||0)}</div>
+          <div><div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px;">Storage ${fmt(d.storageUsage)}%</div>${cpuBar(d.storageUsage||0)}</div>
+          <div><div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px;">Bandwidth ${fmt(d.bandwidthUsage)}%</div>${cpuBar(d.bandwidthUsage||0)}</div>
+        </div>
+      </div>
+      ${d.tags?`<div style="margin-top:12px;">${d.tags.split(',').map(t=>`<span class="chip" style="margin:2px;">${t.trim()}</span>`).join('')}</div>`:''}`;
+    showModal('deviceDetailModal');
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function detailRow(label, val) {
+  return `<div><div style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">${label}</div><div style="font-size:0.88rem;color:var(--text);margin-top:3px;">${val||'—'}</div></div>`;
+}
+
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modalTitle').textContent = 'Add Device';
+  document.getElementById('deviceForm').reset();
+  showModal('deviceModal');
+}
+
+async function editDevice(id) {
+  try {
+    const d = await API.devices.get(id);
+    editingId = id;
+    document.getElementById('modalTitle').textContent = 'Edit Device';
+    document.getElementById('f-hostname').value = d.hostname||'';
+    document.getElementById('f-ip').value = d.ipAddress||'';
+    document.getElementById('f-mac').value = d.macAddress||'';
+    document.getElementById('f-type').value = d.deviceType||'UNKNOWN';
+    document.getElementById('f-vendor').value = d.vendor||'';
+    document.getElementById('f-os').value = d.operatingSystem||'';
+    document.getElementById('f-subnet').value = d.subnet||'';
+    document.getElementById('f-gateway').value = d.gateway||'';
+    document.getElementById('f-vlan').value = d.vlanId||'';
+    document.getElementById('f-netname').value = d.networkName||'';
+    document.getElementById('f-desc').value = d.description||'';
+    document.getElementById('f-tags').value = d.tags||'';
+    showModal('deviceModal');
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function submitDevice(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submitDevBtn');
+  btn.disabled = true;
+  const payload = {
+    hostname: document.getElementById('f-hostname').value,
+    ipAddress: document.getElementById('f-ip').value,
+    macAddress: document.getElementById('f-mac').value,
+    deviceType: document.getElementById('f-type').value,
+    vendor: document.getElementById('f-vendor').value,
+    operatingSystem: document.getElementById('f-os').value,
+    subnet: document.getElementById('f-subnet').value,
+    gateway: document.getElementById('f-gateway').value,
+    vlanId: document.getElementById('f-vlan').value || null,
+    networkName: document.getElementById('f-netname').value,
+    description: document.getElementById('f-desc').value,
+    tags: document.getElementById('f-tags').value,
+  };
+  try {
+    if (editingId) {
+      await API.devices.update(editingId, payload);
+      Toast.success('Device Updated', payload.hostname);
+    } else {
+      await API.devices.create(orgId, payload);
+      Toast.success('Device Added', payload.hostname);
+    }
+    closeModal('deviceModal');
+    loadDevices(currentPage);
+  } catch(e) { Toast.error('Error', e.message); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteDevice(id, name) {
+  if (!confirm(`Delete device "${name}"? This cannot be undone.`)) return;
+  try {
+    await API.devices.delete(id);
+    Toast.success('Deleted', name);
+    loadDevices(currentPage);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function toggleMaint(id) {
+  try {
+    const d = await API.devices.maintenance(id);
+    Toast.info('Maintenance', `${d.hostname}: ${d.maintenanceMode?'Enabled':'Disabled'}`);
+    loadDevices(currentPage);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function exportCSV() {
+  const headers = ['ID','Hostname','IP','MAC','Type','Status','CPU%','RAM%','Vendor','OS','Last Seen'];
+  const rows = allDevices.map(d => [d.id,d.hostname,d.ipAddress,d.macAddress||'',d.deviceType,d.status,fmt(d.cpuUsage),fmt(d.ramUsage),d.vendor||'',d.operatingSystem||'',d.lastSeen||'']);
+  const csv = [headers,...rows].map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = `santms-devices-${Date.now()}.csv`;
+  a.click();
+  Toast.success('Exported', 'devices.csv');
+}
+
+function importCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  Toast.info('Import', `Parsing ${file.name}…`);
+  // In production, send to /api/devices/import endpoint
+}
+
+function typeColor(t){return{ROUTER:'#5352ed',SWITCH:'#2ed573',FIREWALL:'#ff4757',SERVER:'#1e90ff',COMPUTER:'#54a0ff',PRINTER:'#ffa502',ACCESS_POINT:'#00d2d3',IOT_DEVICE:'#ff6348',VIRTUAL_MACHINE:'#a29bfe'}[t]||'#636e72';}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+loadDevices();
+setInterval(() => loadDevices(currentPage), 30000);
+</script>
+</body>
+</html>

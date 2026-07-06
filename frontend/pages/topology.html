@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Network Topology — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.6/dist/dist/vis-network.min.css" rel="stylesheet"/>
+<style>
+.topology-wrapper{display:grid;grid-template-columns:1fr 280px;gap:16px;height:calc(100vh - 180px);}
+@media(max-width:1000px){.topology-wrapper{grid-template-columns:1fr;}}
+#network-canvas{background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;position:relative;}
+.topo-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center;}
+.topo-btn{background:var(--glass);border:1px solid var(--border);border-radius:9px;padding:7px 14px;color:var(--text-secondary);cursor:pointer;font-size:0.8rem;transition:var(--transition);display:flex;align-items:center;gap:6px;}
+.topo-btn:hover{background:var(--glass-hover);color:var(--text);}
+.topo-btn.active{background:var(--primary-light);border-color:var(--primary);color:var(--primary);}
+.topo-side{display:flex;flex-direction:column;gap:12px;overflow-y:auto;}
+.legend-dot{width:12px;height:12px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.legend-row{display:flex;align-items:center;gap:8px;font-size:0.78rem;color:var(--text-secondary);padding:4px 0;}
+.node-detail{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+.node-detail h4{font-size:0.9rem;font-weight:700;margin-bottom:12px;color:var(--text);}
+.nd-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.78rem;}
+.nd-row:last-child{border-bottom:none;}
+.nd-label{color:var(--text-secondary);}
+.nd-val{color:var(--text);font-weight:500;}
+.scan-progress{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;display:none;}
+#topoStats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.topo-stat{background:var(--glass);border:1px solid var(--border);border-radius:9px;padding:8px 14px;font-size:0.8rem;color:var(--text-secondary);}
+.topo-stat strong{color:var(--text);display:block;font-size:1.1rem;font-weight:800;}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body" style="padding-bottom:0;">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Topology</span></div>
+        <h1 class="page-title"><i class="fas fa-project-diagram"></i>Network Topology</h1>
+        <p class="page-subtitle">Live network map — drag nodes, zoom, click for details</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="topo-btn" onclick="startScan()"><i class="fas fa-search-location"></i>Discover</button>
+        <button class="topo-btn" onclick="regenerateTopology()"><i class="fas fa-sync-alt"></i>Regenerate</button>
+        <button class="topo-btn" onclick="exportTopoPNG()"><i class="fas fa-image"></i>PNG</button>
+        <button class="topo-btn" onclick="fitNetwork()"><i class="fas fa-expand-arrows-alt"></i>Fit</button>
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div id="topoStats"></div>
+
+    <!-- Toolbar -->
+    <div class="topo-toolbar">
+      <span style="font-size:0.78rem;color:var(--text-muted);">Layout:</span>
+      <div class="topo-btn active" id="lyt-force" onclick="setLayout('physics')"><i class="fas fa-atom"></i>Force</div>
+      <div class="topo-btn" id="lyt-hier" onclick="setLayout('hierarchical')"><i class="fas fa-sitemap"></i>Hierarchical</div>
+      <div class="topo-btn" id="lyt-circle" onclick="setLayout('circular')"><i class="fas fa-circle-notch"></i>Circular</div>
+      <div style="width:1px;height:24px;background:var(--border);margin:0 4px;"></div>
+      <span style="font-size:0.78rem;color:var(--text-muted);">Filter:</span>
+      <div class="topo-btn" id="f-all" onclick="filterNodes('all')">All</div>
+      <div class="topo-btn" id="f-online" onclick="filterNodes('ONLINE')"><span style="color:#2ed573;">●</span>Online</div>
+      <div class="topo-btn" id="f-offline" onclick="filterNodes('OFFLINE')"><span style="color:#ff4757;">●</span>Offline</div>
+      <div class="topo-btn" id="f-warn" onclick="filterNodes('WARNING')"><span style="color:#ffa502;">●</span>Warning</div>
+      <div style="margin-left:auto;font-size:0.78rem;color:var(--text-muted);" id="autoRefreshLabel">
+        <i class="fas fa-clock"></i> Auto-refresh: <strong style="color:var(--success);">ON</strong>
+      </div>
+    </div>
+
+    <!-- Main topology area -->
+    <div class="topology-wrapper">
+      <div id="network-canvas">
+        <div style="position:absolute;top:12px;left:12px;z-index:10;display:flex;flex-direction:column;gap:6px;">
+          <div class="topo-btn" onclick="zoomIn()" title="Zoom In" style="width:36px;height:36px;padding:0;justify-content:center;"><i class="fas fa-plus"></i></div>
+          <div class="topo-btn" onclick="zoomOut()" title="Zoom Out" style="width:36px;height:36px;padding:0;justify-content:center;"><i class="fas fa-minus"></i></div>
+          <div class="topo-btn" onclick="fitNetwork()" title="Fit" style="width:36px;height:36px;padding:0;justify-content:center;"><i class="fas fa-compress-arrows-alt"></i></div>
+        </div>
+        <div id="topology-container" style="width:100%;height:100%;"></div>
+        <div style="position:absolute;bottom:12px;left:12px;font-size:0.72rem;color:var(--text-muted);">
+          Drag to move nodes · Scroll to zoom · Click node for details
+        </div>
+      </div>
+
+      <!-- Side panel -->
+      <div class="topo-side">
+        <!-- Legend -->
+        <div class="card-glass" style="padding:14px;">
+          <div style="font-size:0.78rem;font-weight:700;color:var(--text);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">Legend</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#5352ed;"></span>Router</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#2ed573;"></span>Switch</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ff4757;"></span>Firewall</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#1e90ff;"></span>Server</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#54a0ff;"></span>Computer</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#00d2d3;"></span>Access Point</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#ffa502;"></span>Printer</div>
+          <div class="legend-row"><span class="legend-dot" style="background:#a4b0be;border:2px dashed #636e72;"></span>Offline</div>
+        </div>
+
+        <!-- Node detail panel -->
+        <div class="node-detail" id="nodeDetail" style="display:none;">
+          <h4><i class="fas fa-info-circle" style="color:var(--primary);"></i> <span id="nd-hostname">—</span></h4>
+          <div class="nd-row"><span class="nd-label">IP</span><span class="nd-val" id="nd-ip">—</span></div>
+          <div class="nd-row"><span class="nd-label">MAC</span><span class="nd-val" id="nd-mac" style="font-size:0.72rem;">—</span></div>
+          <div class="nd-row"><span class="nd-label">Type</span><span class="nd-val" id="nd-type">—</span></div>
+          <div class="nd-row"><span class="nd-label">Status</span><span id="nd-status">—</span></div>
+          <div class="nd-row"><span class="nd-label">Vendor</span><span class="nd-val" id="nd-vendor">—</span></div>
+          <div class="nd-row"><span class="nd-label">CPU</span><span class="nd-val" id="nd-cpu">—</span></div>
+          <div class="nd-row"><span class="nd-label">RAM</span><span class="nd-val" id="nd-ram">—</span></div>
+          <div class="nd-row"><span class="nd-label">Latency</span><span class="nd-val" id="nd-latency">—</span></div>
+          <div class="nd-row"><span class="nd-label">Risk Score</span><span class="nd-val" id="nd-risk">—</span></div>
+          <div style="margin-top:10px;display:flex;gap:6px;">
+            <button class="btn-ghost" style="flex:1;font-size:0.75rem;" onclick="goToDevice()"><i class="fas fa-external-link-alt"></i>Details</button>
+          </div>
+        </div>
+
+        <!-- Scan progress -->
+        <div id="scanProgress" class="scan-progress">
+          <div style="font-size:0.82rem;font-weight:600;color:var(--text);margin-bottom:8px;"><i class="fas fa-search-location" style="color:var(--accent);"></i> Scanning network…</div>
+          <div class="progress-bar-custom" style="height:8px;margin-bottom:8px;">
+            <div class="progress-fill" id="scanBar" style="width:0%;"></div>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-secondary);" id="scanMsg">Initializing…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('topology','Topology')) throw new Error('Not auth');
+
+const orgId = Auth.getOrgId();
+let network = null, nodesDS = null, edgesDS = null;
+let selectedDeviceId = null;
+let allNodes = [], currentFilter = 'all';
+
+async function loadTopology() {
+  if (typeof vis === 'undefined') {
+    document.getElementById('topology-container').innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-muted);">
+        <i class="fas fa-triangle-exclamation" style="font-size:2.5rem;color:var(--danger);"></i>
+        <div style="text-align:center;">
+          <div style="font-size:1rem;color:var(--text-secondary);margin-bottom:6px;">Graphing library failed to load</div>
+          <div style="font-size:0.8rem;">Check your internet connection and refresh the page</div>
+        </div>
+      </div>`;
+    Toast.error('Topology Error', 'vis-network library did not load (check your connection)');
+    return;
+  }
+  try {
+    const data = await API.topology.get(orgId);
+    if (!data) return;
+
+    allNodes = data.nodes || [];
+    renderTopology(data);
+    renderTopoStats(data);
+  } catch(e) {
+    Toast.error('Topology Error', e.message);
+    // Demo fallback
+    renderDemoTopology();
+  }
+}
+
+function renderTopology(data) {
+  const nodes = (data.nodes||[]).map(n => ({
+    id: n.id,
+    label: n.label,
+    title: n.title || n.label,
+    group: n.group,
+    color: {
+      background: n.color || '#6c63ff',
+      border: adjustColor(n.color||'#6c63ff', -20),
+      highlight: { background: adjustColor(n.color||'#6c63ff', 30), border: '#fff' },
+      hover: { background: adjustColor(n.color||'#6c63ff', 20), border: '#fff' }
+    },
+    size: n.size || 28,
+    x: n.x, y: n.y,
+    font: { color: '#e8eaf6', size: 11, bold: { mod: 'bold' } },
+    borderWidth: n.status==='OFFLINE' ? 2 : 1,
+    borderDashes: n.status==='OFFLINE',
+    opacity: n.status==='OFFLINE' ? 0.6 : 1,
+    _data: n
+  }));
+
+  const edges = (data.edges||[]).map(e => ({
+    id: e.id,
+    from: e.from,
+    to: e.to,
+    label: e.label || '',
+    color: { color: e.color||'#4ecdc488', highlight: '#fff', hover: '#fff' },
+    width: e.bandwidth > 1000 ? 3 : e.bandwidth > 100 ? 2 : 1,
+    smooth: { type: 'dynamic' },
+    arrows: { to: { enabled: false } },
+    dashes: !e.animated,
+    font: { color: '#9e9eb8', size: 9 }
+  }));
+
+  const container = document.getElementById('topology-container');
+
+  if (network) network.destroy();
+  nodesDS = new vis.DataSet(nodes);
+  edgesDS = new vis.DataSet(edges);
+
+  const options = {
+    nodes: { shape: 'dot', scaling: { min:20, max:50 }, shadow: true },
+    edges: { smooth: { type:'dynamic' }, shadow: false },
+    physics: {
+      enabled: true,
+      barnesHut: { gravitationalConstant:-8000, centralGravity:0.3, springLength:150, springConstant:0.04 },
+      stabilization: { iterations: 150 }
+    },
+    interaction: {
+      hover: true, tooltipDelay: 200,
+      navigationButtons: false,
+      keyboard: true, multiselect: false
+    },
+    layout: { improvedLayout: true }
+  };
+
+  network = new vis.Network(container, { nodes: nodesDS, edges: edgesDS }, options);
+
+  network.on('click', params => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      const node = nodesDS.get(nodeId);
+      if (node && node._data) showNodeDetail(node._data);
+    } else {
+      document.getElementById('nodeDetail').style.display = 'none';
+    }
+  });
+
+  network.on('dragEnd', params => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      const pos = network.getPositions([nodeId])[nodeId];
+      API.topology.updatePos(nodeId, pos.x, pos.y).catch(()=>{});
+    }
+  });
+
+  network.once('stabilizationIterationsDone', () => {
+    network.setOptions({ physics: { enabled: false } });
+  });
+}
+
+function renderDemoTopology() {
+  // Show empty state with helpful message
+  document.getElementById('topology-container').innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;color:var(--text-muted);">
+      <i class="fas fa-project-diagram" style="font-size:3rem;color:var(--border);"></i>
+      <div style="text-align:center;">
+        <div style="font-size:1rem;color:var(--text-secondary);margin-bottom:8px;">No topology data</div>
+        <div style="font-size:0.82rem;">Run a network scan to discover devices and generate the topology</div>
+      </div>
+      <button class="btn-primary-custom" onclick="startScan()"><i class="fas fa-search-location"></i>Start Network Scan</button>
+    </div>`;
+}
+
+function renderTopoStats(data) {
+  document.getElementById('topoStats').innerHTML = `
+    <div class="topo-stat"><strong>${data.totalNodes||0}</strong>Nodes</div>
+    <div class="topo-stat"><strong>${data.totalEdges||0}</strong>Links</div>
+    <div class="topo-stat"><strong style="color:var(--success);">${(allNodes.filter(n=>n.status==='ONLINE').length)}</strong>Online</div>
+    <div class="topo-stat"><strong style="color:var(--danger);">${(allNodes.filter(n=>n.status==='OFFLINE').length)}</strong>Offline</div>
+    <div class="topo-stat" style="font-size:0.72rem;color:var(--text-muted);">Updated ${data.lastUpdated||'—'}</div>`;
+}
+
+function showNodeDetail(node) {
+  selectedDeviceId = node.deviceId;
+  document.getElementById('nd-hostname').textContent = node.label||'—';
+  document.getElementById('nd-ip').textContent = node.ipAddress||'—';
+  document.getElementById('nd-mac').textContent = node.macAddress||'—';
+  document.getElementById('nd-type').textContent = node.deviceType||'—';
+  document.getElementById('nd-status').innerHTML = statusBadge(node.status);
+  document.getElementById('nd-vendor').textContent = node.vendor||'—';
+  document.getElementById('nd-cpu').textContent = fmt(node.cpuUsage||0)+'%';
+  document.getElementById('nd-ram').textContent = fmt(node.ramUsage||0)+'%';
+  document.getElementById('nd-latency').textContent = fmt(node.latency||0)+'ms';
+  document.getElementById('nd-risk').textContent = node.riskScore||0;
+  document.getElementById('nodeDetail').style.display = 'block';
+}
+
+function goToDevice() {
+  if (selectedDeviceId) window.location.href = `devices.html?highlight=${selectedDeviceId}`;
+}
+
+function setLayout(type) {
+  if (!network) return;
+  document.querySelectorAll('[id^="lyt-"]').forEach(b=>b.classList.remove('active'));
+  if (type==='physics') {
+    document.getElementById('lyt-force').classList.add('active');
+    network.setOptions({ physics:{ enabled:true, barnesHut:{gravitationalConstant:-8000} }, layout:{ hierarchical:{ enabled:false } } });
+  } else if (type==='hierarchical') {
+    document.getElementById('lyt-hier').classList.add('active');
+    network.setOptions({ layout:{ hierarchical:{ enabled:true, direction:'UD', sortMethod:'directed' } }, physics:{ enabled:false } });
+  } else if (type==='circular') {
+    document.getElementById('lyt-circle').classList.add('active');
+    if (!nodesDS) return;
+    const ids = nodesDS.getIds();
+    const r = Math.min(350, 60+ids.length*30);
+    nodesDS.update(ids.map((id,i)=>({id, x:r*Math.cos(2*Math.PI*i/ids.length), y:r*Math.sin(2*Math.PI*i/ids.length)})));
+    network.setOptions({ physics:{enabled:false}, layout:{hierarchical:{enabled:false}} });
+    network.fit();
+  }
+}
+
+function filterNodes(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('[id^="f-"]').forEach(b=>b.classList.remove('active'));
+  document.getElementById(`f-${filter==='all'?'all':filter.toLowerCase()}`).classList.add('active');
+  if (!nodesDS) return;
+  nodesDS.getIds().forEach(id => {
+    const n = nodesDS.get(id);
+    const show = filter==='all' || n._data?.status===filter;
+    nodesDS.update({ id, hidden: !show, opacity: show ? 1 : 0 });
+  });
+}
+
+function fitNetwork() { network?.fit({ animation:{ duration:600, easingFunction:'easeInOutQuad' } }); }
+function zoomIn()  { network?.moveTo({ scale:(network.getScale()||1)*1.3 }); }
+function zoomOut() { network?.moveTo({ scale:(network.getScale()||1)/1.3 }); }
+
+async function regenerateTopology() {
+  if (!confirm('Regenerate topology from current devices?')) return;
+  try {
+    const data = await API.topology.regenerate(orgId);
+    renderTopology(data);
+    renderTopoStats(data);
+    Toast.success('Topology Regenerated', `${data.totalNodes} nodes, ${data.totalEdges} edges`);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function startScan() {
+  const net = prompt('Target network (CIDR):', '192.168.1.0/24');
+  if (!net) return;
+  try {
+    const scan = await API.scans.start(orgId, net);
+    const prog = document.getElementById('scanProgress');
+    prog.style.display = 'block';
+    pollScan(scan.id);
+  } catch(e) { Toast.error('Scan Error', e.message); }
+}
+
+async function pollScan(scanId) {
+  const bar = document.getElementById('scanBar');
+  const msg = document.getElementById('scanMsg');
+  const poll = async () => {
+    try {
+      const s = await API.scans.status(scanId);
+      bar.style.width = (s.progressPercent||0)+'%';
+      msg.textContent = s.status==='COMPLETED' ? `✅ Found ${s.devicesFound} devices` :
+                        s.status==='FAILED'    ? `❌ ${s.errorMessage}` :
+                        `Scanning… ${s.progressPercent||0}%`;
+      if (s.status==='RUNNING' || s.status==='PENDING') {
+        setTimeout(poll, 1500);
+      } else {
+        setTimeout(()=>{ document.getElementById('scanProgress').style.display='none'; },3000);
+        if (s.status==='COMPLETED') {
+          Toast.success('Scan Complete', `${s.devicesFound} devices found`);
+          setTimeout(loadTopology, 1000);
+        }
+      }
+    } catch {}
+  };
+  poll();
+}
+
+function exportTopoPNG() {
+  if (!network) return;
+  const canvas = document.querySelector('#topology-container canvas');
+  if (!canvas) { Toast.warning('Export','No topology to export'); return; }
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'santms-topology.png';
+  a.click();
+  Toast.success('Exported', 'topology.png');
+}
+
+function adjustColor(hex, amount) {
+  try {
+    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return `rgb(${Math.max(0,Math.min(255,r+amount))},${Math.max(0,Math.min(255,g+amount))},${Math.max(0,Math.min(255,b+amount))})`;
+  } catch { return hex; }
+}
+
+function isAutoRefreshEnabled() {
+  try {
+    const s = JSON.parse(localStorage.getItem('santms_general_settings') || '{}');
+    return s.topologyAutoRefresh !== false;
+  } catch { return true; }
+}
+
+(function initAutoRefreshLabel() {
+  const on = isAutoRefreshEnabled();
+  const label = document.getElementById('autoRefreshLabel');
+  if (label) label.innerHTML = `<i class="fas fa-clock"></i> Auto-refresh: <strong style="color:${on?'var(--success)':'var(--text-muted)'};">${on?'ON':'OFF'}</strong>`;
+})();
+
+loadTopology();
+setInterval(() => { if (isAutoRefreshEnabled()) loadTopology(); }, 30000);
+</script>
+</body>
+</html>

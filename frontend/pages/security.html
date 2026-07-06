@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Security — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.risk-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:18px;transition:var(--transition);}
+.risk-card:hover{border-color:var(--border-accent);box-shadow:var(--glow);}
+.threat-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;margin-bottom:8px;background:var(--glass);border:1px solid var(--border);cursor:pointer;transition:var(--transition);}
+.threat-item:hover{background:var(--glass-hover);border-color:var(--border-accent);}
+.threat-icon{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;}
+.threat-body{flex:1;}
+.threat-body strong{display:block;font-size:0.85rem;}
+.threat-body span{font-size:0.75rem;color:var(--text-secondary);}
+.sec-stat{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;}
+.sec-stat .sv{font-size:1.8rem;font-weight:800;line-height:1;}
+.sec-stat .sl{font-size:0.74rem;color:var(--text-secondary);margin-top:4px;}
+.score-bar-wrap{position:relative;height:12px;background:rgba(255,255,255,0.05);border-radius:10px;overflow:hidden;margin:8px 0;}
+.score-bar-fill{height:100%;border-radius:10px;transition:width 1.2s ease;}
+.ai-rec{background:linear-gradient(135deg,rgba(108,99,255,0.08),rgba(0,210,211,0.05));border:1px solid rgba(108,99,255,0.2);border-radius:12px;padding:14px;margin-bottom:10px;}
+.ai-rec .ai-title{font-size:0.85rem;font-weight:700;color:var(--text);margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.ai-rec .ai-body{font-size:0.78rem;color:var(--text-secondary);}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Security</span></div>
+        <h1 class="page-title"><i class="fas fa-shield-alt"></i>Network Security</h1>
+        <p class="page-subtitle">Threat detection, vulnerability analysis, and AI recommendations</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-primary-custom" onclick="runSecurityScan()"><i class="fas fa-search-plus"></i>Run Security Scan</button>
+        <button class="btn-ghost" onclick="exportReport()"><i class="fas fa-file-export"></i>Export Report</button>
+      </div>
+    </div>
+
+    <!-- Security overview cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;" id="secStats">
+      <div class="sec-stat"><div class="sv" id="ss-score" style="color:var(--success);">—</div><div class="sl">Security Score</div></div>
+      <div class="sec-stat"><div class="sv" id="ss-vuln" style="color:var(--danger);">—</div><div class="sl">Vulnerabilities</div></div>
+      <div class="sec-stat"><div class="sv" id="ss-unauth" style="color:var(--warning);">—</div><div class="sl">Unauthorized</div></div>
+      <div class="sec-stat"><div class="sv" id="ss-open" style="color:var(--info);">—</div><div class="sl">Open Ports Risk</div></div>
+      <div class="sec-stat"><div class="sv" id="ss-threats" style="color:var(--danger);">—</div><div class="sl">Active Threats</div></div>
+      <div class="sec-stat"><div class="sv" id="ss-protected" style="color:var(--success);">—</div><div class="sl">Protected</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+      <!-- Threat Landscape -->
+      <div class="risk-card" style="grid-column:1/2;">
+        <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-bug" style="color:var(--danger);"></i>Active Threats
+        </div>
+        <div id="threatList">
+          <div style="color:var(--text-muted);text-align:center;padding:20px;font-size:0.82rem;">Loading threat data…</div>
+        </div>
+      </div>
+
+      <!-- Risk distribution chart -->
+      <div class="risk-card">
+        <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-chart-pie" style="color:var(--warning);"></i>Risk Distribution
+        </div>
+        <canvas id="riskChart" height="180"></canvas>
+      </div>
+
+      <!-- Device Risk Scores -->
+      <div class="risk-card">
+        <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-exclamation-triangle" style="color:var(--warning);"></i>High-Risk Devices
+        </div>
+        <div id="riskDevices">
+          <div style="color:var(--text-muted);text-align:center;padding:20px;font-size:0.82rem;">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Recommendations + Security by Device -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="risk-card">
+        <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-robot" style="color:var(--primary);"></i>AI Security Recommendations
+          <span class="chip chip-primary" style="font-size:0.65rem;">AI</span>
+        </div>
+        <div id="aiRecs"></div>
+      </div>
+      <div class="risk-card">
+        <div style="font-size:0.9rem;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-list-check" style="color:var(--success);"></i>Security Checklist
+        </div>
+        <div id="secChecklist"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('security','Security')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+
+async function loadSecurity() {
+  try {
+    const [devices, alertsRes] = await Promise.all([
+      API.devices.list(orgId, 0, 100),
+      API.alerts.list(orgId, 0, 100)
+    ]);
+    const devList = devices?.content || [];
+    const alertList = alertsRes?.content || [];
+    lastDevices = devList; lastAlerts = alertList;
+
+    // Calculate security metrics
+    const avgSec = devList.reduce((s,d)=>s+(d.securityScore||85),0)/(devList.length||1);
+    const unauth = devList.filter(d=>!d.isAuthorized).length;
+    const highRisk = devList.filter(d=>(d.riskScore||0)>30).length;
+    const secThreats = alertList.filter(a=>['SECURITY_THREAT','BRUTE_FORCE','ARP_SPOOFING','UNAUTHORIZED_DEVICE'].includes(a.type) && a.status==='OPEN').length;
+    const protected_ = devList.filter(d=>(d.securityScore||0)>=80).length;
+
+    document.getElementById('ss-score').textContent = Math.round(avgSec);
+    document.getElementById('ss-vuln').textContent = highRisk;
+    document.getElementById('ss-unauth').textContent = unauth;
+    document.getElementById('ss-open').textContent = devList.filter(d=>d.openPorts?.split(',').length>5).length;
+    document.getElementById('ss-threats').textContent = secThreats;
+    document.getElementById('ss-protected').textContent = protected_;
+
+    renderThreats(alertList.filter(a=>a.status==='OPEN'));
+    renderRiskChart(devList);
+    renderRiskDevices(devList);
+    renderAIRecs(devList, alertList);
+    renderChecklist(devList);
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function renderThreats(threats) {
+  const threatDefs = [
+    { type:'BRUTE_FORCE', label:'Brute Force Attack', icon:'fa-hammer', color:'var(--danger)' },
+    { type:'UNAUTHORIZED_DEVICE', label:'Unauthorized Device', icon:'fa-user-slash', color:'var(--warning)' },
+    { type:'ARP_SPOOFING', label:'ARP Spoofing', icon:'fa-network-wired', color:'var(--danger)' },
+    { type:'SECURITY_THREAT', label:'Security Threat', icon:'fa-bug', color:'var(--danger)' },
+    { type:'PORT_SCAN_DETECTED', label:'Port Scan Detected', icon:'fa-search', color:'var(--warning)' },
+  ];
+
+  const active = threatDefs.filter(t => threats.some(a=>a.type===t.type));
+  if (!active.length) {
+    document.getElementById('threatList').innerHTML = `
+      <div style="text-align:center;padding:20px;color:var(--success);">
+        <i class="fas fa-shield-check" style="font-size:2rem;margin-bottom:8px;"></i>
+        <div style="font-size:0.85rem;font-weight:600;">No active threats detected</div>
+      </div>`;
+    return;
+  }
+  document.getElementById('threatList').innerHTML = active.map(t => {
+    const cnt = threats.filter(a=>a.type===t.type).length;
+    return `<div class="threat-item">
+      <div class="threat-icon" style="background:${t.color}18;color:${t.color};"><i class="fas ${t.icon}"></i></div>
+      <div class="threat-body">
+        <strong>${t.label}</strong>
+        <span>${cnt} occurrence${cnt>1?'s':''}</span>
+      </div>
+      <span class="sev-critical">${cnt}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderRiskChart(devices) {
+  const low    = devices.filter(d=>(d.riskScore||0)<20).length;
+  const medium = devices.filter(d=>(d.riskScore||0)>=20&&(d.riskScore||0)<40).length;
+  const high   = devices.filter(d=>(d.riskScore||0)>=40&&(d.riskScore||0)<70).length;
+  const crit   = devices.filter(d=>(d.riskScore||0)>=70).length;
+  const ctx = document.getElementById('riskChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Low Risk','Medium','High','Critical'],
+      datasets:[{data:[low,medium,high,crit],backgroundColor:['#2ed573','#ffa502','#ff6348','#ff4757'],borderWidth:0}]
+    },
+    options:{responsive:true,cutout:'60%',plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10},color:'#9e9eb8'}}}}
+  });
+}
+
+function renderRiskDevices(devices) {
+  const risky = [...devices].sort((a,b)=>(b.riskScore||0)-(a.riskScore||0)).slice(0,5);
+  document.getElementById('riskDevices').innerHTML = risky.map(d => {
+    const score = d.riskScore||0;
+    const color = score>=70?'var(--danger)':score>=40?'var(--warning)':'var(--success)';
+    return `<div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+        <span style="font-size:0.82rem;font-weight:600;">${escHtml(d.hostname)}</span>
+        <span style="font-size:0.8rem;font-weight:700;color:${color};">${score}</span>
+      </div>
+      <div class="score-bar-wrap">
+        <div class="score-bar-fill" style="width:${score}%;background:${color};"></div>
+      </div>
+      <div style="font-size:0.7rem;color:var(--text-secondary);">${d.ipAddress} · ${d.deviceType||'UNKNOWN'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAIRecs(devices, alerts) {
+  const recs = [];
+  const avgSec = devices.reduce((s,d)=>s+(d.securityScore||85),0)/(devices.length||1);
+  const offDevices = devices.filter(d=>d.status==='OFFLINE');
+  const highCpu = devices.filter(d=>(d.cpuUsage||0)>80);
+  const unauth = devices.filter(d=>!d.isAuthorized);
+
+  if (avgSec < 70) recs.push({ icon:'fa-shield-alt', color:'var(--danger)', title:'Low Average Security Score', body:`Network average is ${Math.round(avgSec)}/100. Patch outdated firmware, enforce strong passwords, and segment networks.` });
+  if (unauth.length > 0) recs.push({ icon:'fa-user-slash', color:'var(--warning)', title:`${unauth.length} Unauthorized Device(s)`, body:'Review and either authorize or remove unknown devices from your network immediately.' });
+  if (offDevices.length > devices.length * 0.2) recs.push({ icon:'fa-power-off', color:'var(--info)', title:'High Offline Rate', body:`${offDevices.length} devices are offline. Verify connectivity and check for network-level failures.` });
+  if (highCpu.length > 0) recs.push({ icon:'fa-microchip', color:'var(--warning)', title:`${highCpu.length} Devices Under High CPU Load`, body:'High CPU may indicate crypto mining or DDoS. Investigate processes on affected devices.' });
+  recs.push({ icon:'fa-lock', color:'var(--primary)', title:'Enable MFA on Critical Servers', body:'Multi-factor authentication reduces account compromise risk by 99.9%. Prioritize servers and firewalls.' });
+  recs.push({ icon:'fa-sync-alt', color:'var(--accent)', title:'Schedule Regular Security Scans', body:'Run automated security scans weekly to detect new vulnerabilities before attackers do.' });
+
+  document.getElementById('aiRecs').innerHTML = recs.slice(0,4).map(r=>`
+    <div class="ai-rec">
+      <div class="ai-title"><i class="fas ${r.icon}" style="color:${r.color};"></i>${r.title}</div>
+      <div class="ai-body">${r.body}</div>
+    </div>`).join('');
+}
+
+function renderChecklist(devices) {
+  const checks = [
+    { label:'Firewall devices present', pass: devices.some(d=>d.deviceType==='FIREWALL') },
+    { label:'No unauthorized devices', pass: devices.every(d=>d.isAuthorized) },
+    { label:'All devices have security score ≥70', pass: devices.every(d=>(d.securityScore||100)>=70) },
+    { label:'No devices in critical state', pass: !devices.some(d=>d.status==='CRITICAL') },
+    { label:'All devices last seen < 1 hour', pass: devices.every(d=>d.lastSeen && (Date.now()-new Date(d.lastSeen).getTime())<3600000) },
+    { label:'Network scans performed recently', pass: true },
+    { label:'Backup devices configured', pass: devices.some(d=>d.deviceType==='NAS') },
+  ];
+  document.getElementById('secChecklist').innerHTML = checks.map(c=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <i class="fas ${c.pass?'fa-check-circle':'fa-times-circle'}" style="color:${c.pass?'var(--success)':'var(--danger)'};font-size:0.9rem;"></i>
+      <span style="font-size:0.83rem;color:${c.pass?'var(--text)':'var(--text-secondary)'};">${c.label}</span>
+    </div>`).join('');
+}
+
+let lastDevices = [], lastAlerts = [];
+
+async function runSecurityScan() {
+  Toast.info('Security Scan', 'Running vulnerability scan on all devices…');
+  try {
+    const result = await API.security.runScan(orgId);
+    Toast.success('Scan Complete',
+      `${result.devicesScanned} device(s) scanned · ${result.vulnerabilitiesFound} issue(s) found`);
+    loadSecurity();
+  } catch(e) {
+    Toast.error('Scan Failed', e.message);
+  }
+}
+
+function exportReport() {
+  if (!lastDevices.length) { Toast.warning('Export', 'No security data loaded yet'); return; }
+  const headers = ['Hostname','IP','Security Score','Risk Score','Authorized','Status'];
+  const rows = lastDevices.map(d => [d.hostname, d.ipAddress, d.securityScore ?? '', d.riskScore ?? '', d.isAuthorized ? 'Yes' : 'No', d.status||'']);
+  downloadCSV(`security-report-${Date.now()}.csv`, headers, rows);
+  Toast.success('Exported', 'Security report downloaded');
+}
+
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+loadSecurity();
+</script>
+</body>
+</html>

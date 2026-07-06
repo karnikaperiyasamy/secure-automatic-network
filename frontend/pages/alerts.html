@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Alerts — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<style>
+.alert-row{transition:var(--transition);}
+.alert-row.sev-CRITICAL td:first-child{border-left:3px solid var(--danger);}
+.alert-row.sev-HIGH td:first-child{border-left:3px solid var(--warning);}
+.alert-row.sev-MEDIUM td:first-child{border-left:3px solid var(--info);}
+.alert-row.sev-LOW td:first-child{border-left:3px solid var(--success);}
+.summary-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
+.sum-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;}
+.sum-card .sv{font-size:1.8rem;font-weight:800;}
+.sum-card .sl{font-size:0.75rem;color:var(--text-secondary);margin-top:2px;}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Alerts</span></div>
+        <h1 class="page-title"><i class="fas fa-bell"></i>Alert Management</h1>
+        <p class="page-subtitle" id="alertSummary">Loading…</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="acknowledgeSelected()"><i class="fas fa-check"></i>Ack Selected</button>
+        <button class="btn-ghost" onclick="resolveSelected()"><i class="fas fa-check-double"></i>Resolve Selected</button>
+        <button class="btn-ghost" onclick="exportAlerts()"><i class="fas fa-download"></i>Export</button>
+      </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="summary-cards">
+      <div class="sum-card"><div class="sv" id="sc-total" style="color:var(--primary);">—</div><div class="sl">Total Alerts</div></div>
+      <div class="sum-card"><div class="sv" id="sc-crit" style="color:var(--danger);">—</div><div class="sl">Critical</div></div>
+      <div class="sum-card"><div class="sv" id="sc-high" style="color:var(--warning);">—</div><div class="sl">High</div></div>
+      <div class="sum-card"><div class="sv" id="sc-open" style="color:var(--info);">—</div><div class="sl">Open</div></div>
+      <div class="sum-card"><div class="sv" id="sc-ack" style="color:var(--text-secondary);">—</div><div class="sl">Acknowledged</div></div>
+      <div class="sum-card"><div class="sv" id="sc-res" style="color:var(--success);">—</div><div class="sl">Resolved</div></div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+      <select id="filtSev" class="form-control-custom" style="width:auto;" onchange="loadAlerts()">
+        <option value="">All Severities</option>
+        <option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option><option>INFO</option>
+      </select>
+      <select id="filtStat" class="form-control-custom" style="width:auto;" onchange="loadAlerts()">
+        <option value="">All Statuses</option>
+        <option>OPEN</option><option>ACKNOWLEDGED</option><option>RESOLVED</option>
+      </select>
+      <select id="filtType" class="form-control-custom" style="width:auto;" onchange="loadAlerts()">
+        <option value="">All Types</option>
+        <option>DEVICE_OFFLINE</option><option>HIGH_CPU</option><option>HIGH_RAM</option>
+        <option>HIGH_TEMPERATURE</option><option>SECURITY_THREAT</option>
+        <option>UNAUTHORIZED_DEVICE</option><option>BRUTE_FORCE</option><option>BANDWIDTH_EXCEEDED</option>
+      </select>
+      <button class="btn-ghost" onclick="resetFilters()"><i class="fas fa-times"></i>Reset</button>
+      <button class="btn-ghost" onclick="loadAlerts()" style="margin-left:auto;"><i class="fas fa-sync-alt"></i>Refresh</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card-glass">
+      <div style="overflow-x:auto;">
+        <table class="table-custom">
+          <thead><tr>
+            <th><input type="checkbox" id="selAll" onchange="toggleAll(this)"/></th>
+            <th>Severity</th><th>Title</th><th>Type</th>
+            <th>Device</th><th>Status</th><th>Value</th><th>Time</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="alertBody">
+            <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" style="padding:14px 20px;">
+        <span id="alertPagInfo">—</span>
+        <div class="page-btns" id="alertPageBtns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('alerts','Alerts')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let currentPage = 0, allData = [];
+
+async function loadAlerts(page=0) {
+  currentPage = page;
+  try {
+    const res = await API.alerts.list(orgId, page, 25);
+    if (!res) return;
+    allData = res.content || [];
+    updateSummary(allData);
+    renderTable(applyFilters(allData));
+    renderPagination(page, res.totalPages||1, res.totalElements||0);
+    document.getElementById('alertSummary').textContent = `${res.totalElements||0} total alerts`;
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function applyFilters(data) {
+  const sev = document.getElementById('filtSev').value;
+  const stat = document.getElementById('filtStat').value;
+  const type = document.getElementById('filtType').value;
+  return data.filter(a =>
+    (!sev  || a.severity===sev) &&
+    (!stat || a.status===stat)  &&
+    (!type || a.type===type)
+  );
+}
+
+function updateSummary(data) {
+  document.getElementById('sc-total').textContent = data.length;
+  document.getElementById('sc-crit').textContent  = data.filter(a=>a.severity==='CRITICAL').length;
+  document.getElementById('sc-high').textContent  = data.filter(a=>a.severity==='HIGH').length;
+  document.getElementById('sc-open').textContent  = data.filter(a=>a.status==='OPEN').length;
+  document.getElementById('sc-ack').textContent   = data.filter(a=>a.status==='ACKNOWLEDGED').length;
+  document.getElementById('sc-res').textContent   = data.filter(a=>a.status==='RESOLVED').length;
+}
+
+function renderTable(data) {
+  if (!data.length) {
+    document.getElementById('alertBody').innerHTML='<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted);">No alerts found</td></tr>';
+    return;
+  }
+  const typeIcons = {DEVICE_OFFLINE:'fa-times-circle',HIGH_CPU:'fa-microchip',HIGH_RAM:'fa-memory',HIGH_TEMPERATURE:'fa-thermometer-half',SECURITY_THREAT:'fa-shield-exclamation',UNAUTHORIZED_DEVICE:'fa-user-slash',BRUTE_FORCE:'fa-hammer',BANDWIDTH_EXCEEDED:'fa-tachometer-alt',DEFAULT:'fa-bell'};
+  document.getElementById('alertBody').innerHTML = data.map(a => {
+    const rowCls = `alert-row sev-${a.severity}`;
+    const icon = typeIcons[a.type]||typeIcons.DEFAULT;
+    return `<tr class="${rowCls}">
+      <td><input type="checkbox" class="alert-cb" value="${a.id}"/></td>
+      <td>${severityBadge(a.severity)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:28px;height:28px;border-radius:7px;background:${getSevBg(a.severity)};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <i class="fas ${icon}" style="font-size:0.75rem;color:${getSevColor(a.severity)};"></i>
+          </div>
+          <div>
+            <div style="font-size:0.85rem;font-weight:600;">${escHtml(a.title)}</div>
+            <div style="font-size:0.72rem;color:var(--text-secondary);">${escHtml(a.message?.substring(0,60)||'')}</div>
+          </div>
+        </div>
+      </td>
+      <td><span class="chip" style="font-size:0.7rem;">${(a.type||'').replace(/_/g,' ')}</span></td>
+      <td>
+        <div style="font-size:0.82rem;">${escHtml(a.deviceName||'—')}</div>
+        <div style="font-size:0.72rem;color:var(--text-secondary);">${escHtml(a.deviceIp||'')}</div>
+      </td>
+      <td>
+        <span class="badge-status ${a.status==='OPEN'?'badge-critical':a.status==='ACKNOWLEDGED'?'badge-warning':'badge-online'}">
+          <span class="status-dot-sm ${a.status==='OPEN'?'dot-critical':a.status==='ACKNOWLEDGED'?'dot-warning':'dot-online'}"></span>
+          ${a.status}
+        </span>
+      </td>
+      <td style="font-size:0.8rem;">${a.metricValue!=null?fmt(a.metricValue)+'%':'—'}</td>
+      <td style="font-size:0.75rem;color:var(--text-secondary);">${timeAgo(a.createdAt)}</td>
+      <td>
+        <div style="display:flex;gap:5px;">
+          ${a.status==='OPEN'?`<div class="btn-icon" title="Acknowledge" onclick="ackAlert(${a.id})"><i class="fas fa-check" style="color:var(--warning);"></i></div>`:''}
+          ${a.status!=='RESOLVED'?`<div class="btn-icon" title="Resolve" onclick="resolveAlert(${a.id})"><i class="fas fa-check-double" style="color:var(--success);"></i></div>`:''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPagination(page, total, count) {
+  document.getElementById('alertPagInfo').textContent = `Page ${page+1} of ${total}`;
+  let html = `<div class="page-btn" onclick="loadAlerts(${Math.max(0,page-1)})"><i class="fas fa-chevron-left"></i></div>`;
+  for (let i=0;i<Math.min(total,7);i++) html+=`<div class="page-btn ${i===page?'active':''}" onclick="loadAlerts(${i})">${i+1}</div>`;
+  html+=`<div class="page-btn" onclick="loadAlerts(${Math.min(total-1,page+1)})"><i class="fas fa-chevron-right"></i></div>`;
+  document.getElementById('alertPageBtns').innerHTML=html;
+}
+
+async function ackAlert(id) {
+  try { await API.alerts.ack(id); Toast.success('Acknowledged'); loadAlerts(currentPage); }
+  catch(e) { Toast.error('Error',e.message); }
+}
+async function resolveAlert(id) {
+  const note = prompt('Resolution note (optional):','');
+  try { await API.alerts.resolve(id, note||''); Toast.success('Resolved'); loadAlerts(currentPage); }
+  catch(e) { Toast.error('Error',e.message); }
+}
+
+function getSelected() { return [...document.querySelectorAll('.alert-cb:checked')].map(c=>c.value); }
+async function acknowledgeSelected() {
+  const ids = getSelected(); if(!ids.length){Toast.warning('Select','No alerts selected');return;}
+  await Promise.all(ids.map(id=>API.alerts.ack(id).catch(()=>{})));
+  Toast.success('Acknowledged',`${ids.length} alerts`); loadAlerts(currentPage);
+}
+async function resolveSelected() {
+  const ids = getSelected(); if(!ids.length){Toast.warning('Select','No alerts selected');return;}
+  const note = prompt('Resolution note:','Bulk resolved');
+  await Promise.all(ids.map(id=>API.alerts.resolve(id,note||'').catch(()=>{})));
+  Toast.success('Resolved',`${ids.length} alerts`); loadAlerts(currentPage);
+}
+
+function toggleAll(cb) { document.querySelectorAll('.alert-cb').forEach(c=>c.checked=cb.checked); }
+function resetFilters() { document.getElementById('filtSev').value=''; document.getElementById('filtStat').value=''; document.getElementById('filtType').value=''; loadAlerts(0); }
+function exportAlerts() {
+  const headers=['ID','Title','Severity','Status','Type','Device','IP','Value','Time'];
+  const rows=allData.map(a=>[a.id,a.title,a.severity,a.status,a.type,a.deviceName||'',a.deviceIp||'',a.metricValue||'',a.createdAt||'']);
+  const csv=[headers,...rows].map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const el=document.createElement('a');el.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);el.download='santms-alerts.csv';el.click();
+  Toast.success('Exported','alerts.csv');
+}
+function getSevColor(s){return{CRITICAL:'#ff4757',HIGH:'#ffa502',MEDIUM:'#54a0ff',LOW:'#2ed573',INFO:'#a29bfe'}[s]||'#a29bfe';}
+function getSevBg(s){return{CRITICAL:'rgba(255,71,87,0.15)',HIGH:'rgba(255,165,2,0.15)',MEDIUM:'rgba(84,160,255,0.15)',LOW:'rgba(46,213,115,0.15)',INFO:'rgba(162,155,254,0.15)'}[s]||'var(--glass)';}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+loadAlerts();
+setInterval(()=>loadAlerts(currentPage), 20000);
+</script>
+</body>
+</html>

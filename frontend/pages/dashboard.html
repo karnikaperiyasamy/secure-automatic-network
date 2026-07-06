@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Dashboard — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px;}
+.charts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;margin-bottom:24px;}
+.bottom-grid{display:grid;grid-template-columns:2fr 1fr;gap:16px;}
+@media(max-width:900px){.bottom-grid{grid-template-columns:1fr;}}
+
+.metric-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);}
+.metric-row:last-child{border-bottom:none;}
+.metric-name{font-size:0.83rem;color:var(--text-secondary);display:flex;align-items:center;gap:8px;}
+.metric-val{font-size:0.9rem;font-weight:700;color:var(--text);}
+
+.activity-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+.activity-item:last-child{border-bottom:none;}
+.activity-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:0.8rem;flex-shrink:0;}
+.activity-body strong{display:block;font-size:0.83rem;color:var(--text);}
+.activity-body span{font-size:0.75rem;color:var(--text-secondary);}
+.activity-time{font-size:0.7rem;color:var(--text-muted);margin-top:2px;white-space:nowrap;}
+
+.security-score-ring{display:flex;flex-direction:column;align-items:center;padding:16px 0;}
+.score-val{font-size:3rem;font-weight:900;background:linear-gradient(135deg,var(--primary),var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.score-label{font-size:0.78rem;color:var(--text-secondary);}
+
+.top-device-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);}
+.top-device-row:last-child{border-bottom:none;}
+.top-device-icon{width:30px;height:30px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:0.8rem;color:var(--primary);}
+.top-device-info{flex:1;overflow:hidden;}
+.top-device-info strong{display:block;font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.top-device-info span{font-size:0.72rem;color:var(--text-secondary);}
+
+.refresh-btn{display:flex;align-items:center;gap:6px;font-size:0.75rem;color:var(--text-secondary);cursor:pointer;padding:4px 10px;border:1px solid var(--border);border-radius:8px;background:var(--glass);}
+.refresh-btn:hover{color:var(--text);background:var(--glass-hover);}
+.live-dot{width:7px;height:7px;background:#2ed573;border-radius:50%;box-shadow:0 0 6px #2ed573;animation:blink 2s infinite;}
+
+.alert-quick{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;margin-bottom:8px;cursor:pointer;transition:var(--transition);}
+.alert-quick:hover{background:var(--glass-hover);}
+.alert-quick .aq-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;flex-shrink:0;}
+.alert-quick .aq-body{flex:1;overflow:hidden;}
+.alert-quick .aq-body strong{display:block;font-size:0.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.alert-quick .aq-body span{font-size:0.72rem;color:var(--text-secondary);}
+.alert-quick .aq-time{font-size:0.7rem;color:var(--text-muted);white-space:nowrap;}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <!-- Page Header -->
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="#">Home</a><i class="fas fa-chevron-right"></i><span>Dashboard</span></div>
+        <h1 class="page-title"><i class="fas fa-tachometer-alt"></i>Network Dashboard</h1>
+        <p class="page-subtitle" id="lastUpdated">Loading network data…</p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="live-dot"></div>
+        <span style="font-size:0.78rem;color:var(--success);">Live</span>
+        <div class="refresh-btn" onclick="loadDashboard()"><i class="fas fa-sync-alt"></i>Refresh</div>
+        <select id="orgSelect" class="form-control-custom" style="width:auto;padding:6px 12px;" onchange="loadDashboard()">
+          <option value="1">SANTMS Corp</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid" id="statGrid">
+      <div class="stat-card" style="--card-color:#6c63ff;--card-color-bg:rgba(108,99,255,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-server"></i></div>
+        <div class="value" id="s-total">—</div>
+        <div class="label">Total Devices</div>
+        <div class="change up" id="s-total-ch"><i class="fas fa-arrow-up"></i><span>—</span></div>
+      </div>
+      <div class="stat-card" style="--card-color:#2ed573;--card-color-bg:rgba(46,213,115,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-check-circle"></i></div>
+        <div class="value" id="s-online">—</div>
+        <div class="label">Online</div>
+        <div class="change up"><i class="fas fa-arrow-up"></i><span id="s-online-pct">—%</span></div>
+      </div>
+      <div class="stat-card" style="--card-color:#ff4757;--card-color-bg:rgba(255,71,87,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-times-circle"></i></div>
+        <div class="value" id="s-offline">—</div>
+        <div class="label">Offline</div>
+        <div class="change down"><i class="fas fa-arrow-down"></i><span>Down</span></div>
+      </div>
+      <div class="stat-card" style="--card-color:#ffa502;--card-color-bg:rgba(255,165,2,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-exclamation-triangle"></i></div>
+        <div class="value" id="s-alerts">—</div>
+        <div class="label">Open Alerts</div>
+        <div class="change" id="s-crit-ch" style="color:var(--danger);"><i class="fas fa-fire"></i><span id="s-critical">— Critical</span></div>
+      </div>
+      <div class="stat-card" style="--card-color:#54a0ff;--card-color-bg:rgba(84,160,255,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-route"></i></div>
+        <div class="value" id="s-routers">—</div>
+        <div class="label">Routers</div>
+      </div>
+      <div class="stat-card" style="--card-color:#00d2d3;--card-color-bg:rgba(0,210,211,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-sitemap"></i></div>
+        <div class="value" id="s-switches">—</div>
+        <div class="label">Switches</div>
+      </div>
+      <div class="stat-card" style="--card-color:#ff6b6b;--card-color-bg:rgba(255,107,107,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-fire-alt"></i></div>
+        <div class="value" id="s-firewalls">—</div>
+        <div class="label">Firewalls</div>
+      </div>
+      <div class="stat-card" style="--card-color:#a29bfe;--card-color-bg:rgba(162,155,254,0.12);">
+        <div class="stat-glow"></div>
+        <div class="icon-wrap"><i class="fas fa-database"></i></div>
+        <div class="value" id="s-servers">—</div>
+        <div class="label">Servers</div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-grid">
+      <div class="card-glass">
+        <div class="card-header-custom">
+          <span class="card-title-custom"><i class="fas fa-chart-donut" style="color:var(--primary);"></i>Device Categories</span>
+        </div>
+        <div class="card-body-custom" style="height:220px;display:flex;align-items:center;justify-content:center;">
+          <canvas id="deviceTypeChart" style="max-height:200px;"></canvas>
+        </div>
+      </div>
+      <div class="card-glass">
+        <div class="card-header-custom">
+          <span class="card-title-custom"><i class="fas fa-chart-bar" style="color:var(--accent);"></i>Bandwidth Trend (7d)</span>
+        </div>
+        <div class="card-body-custom" style="height:220px;">
+          <canvas id="bandwidthChart" style="max-height:200px;"></canvas>
+        </div>
+      </div>
+      <div class="card-glass">
+        <div class="card-header-custom">
+          <span class="card-title-custom"><i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>Alert Trend (7d)</span>
+        </div>
+        <div class="card-body-custom" style="height:220px;">
+          <canvas id="alertTrendChart" style="max-height:200px;"></canvas>
+        </div>
+      </div>
+      <div class="card-glass">
+        <div class="card-header-custom">
+          <span class="card-title-custom"><i class="fas fa-heartbeat" style="color:var(--success);"></i>System Health</span>
+        </div>
+        <div class="card-body-custom">
+          <div id="healthMetrics"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Row -->
+    <div class="bottom-grid">
+      <!-- Recent Alerts -->
+      <div class="card-glass">
+        <div class="card-header-custom">
+          <span class="card-title-custom"><i class="fas fa-bell" style="color:var(--warning);"></i>Recent Alerts</span>
+          <a href="alerts.html" style="font-size:0.78rem;color:var(--primary);text-decoration:none;">View all →</a>
+        </div>
+        <div class="card-body-custom" id="recentAlerts"><div style="color:var(--text-muted);text-align:center;padding:20px;">Loading…</div></div>
+      </div>
+
+      <!-- Right column -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <!-- Security Score -->
+        <div class="card-glass">
+          <div class="card-header-custom">
+            <span class="card-title-custom"><i class="fas fa-shield-alt" style="color:var(--success);"></i>Security Score</span>
+          </div>
+          <div class="card-body-custom">
+            <div class="security-score-ring">
+              <div class="score-val" id="secScore">—</div>
+              <div class="score-label">/ 100 — <span id="secLabel">Loading…</span></div>
+              <canvas id="secGauge" width="160" height="80" style="margin-top:12px;"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top Devices -->
+        <div class="card-glass">
+          <div class="card-header-custom">
+            <span class="card-title-custom"><i class="fas fa-fire" style="color:var(--warning);"></i>Top Active Devices</span>
+          </div>
+          <div class="card-body-custom" id="topDevices"><div style="color:var(--text-muted);text-align:center;padding:20px;">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card-glass" style="margin-top:16px;">
+      <div class="card-header-custom">
+        <span class="card-title-custom"><i class="fas fa-clock" style="color:var(--info);"></i>Recent Activity</span>
+        <a href="auditlogs.html" style="font-size:0.78rem;color:var(--primary);text-decoration:none;">Full log →</a>
+      </div>
+      <div class="card-body-custom">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0;" id="activityFeed">
+          <div style="color:var(--text-muted);text-align:center;padding:20px;grid-column:1/-1;">Loading activity…</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+const orgId = () => document.getElementById('orgSelect').value || Auth.getOrgId();
+let charts = {};
+
+if (!initPage('dashboard','Dashboard')) throw new Error('Not auth');
+
+Chart.defaults.color = '#9e9eb8';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+
+async function loadDashboard() {
+  try {
+    const d = await API.dashboard(orgId());
+    if (!d) return;
+
+    // Stats
+    document.getElementById('s-total').textContent   = d.totalDevices||0;
+    document.getElementById('s-online').textContent  = d.onlineDevices||0;
+    document.getElementById('s-offline').textContent = d.offlineDevices||0;
+    document.getElementById('s-alerts').textContent  = d.openAlerts||0;
+    document.getElementById('s-critical').textContent= `${d.criticalAlerts||0} Critical`;
+    document.getElementById('s-routers').textContent  = d.routers||0;
+    document.getElementById('s-switches').textContent = d.switches||0;
+    document.getElementById('s-firewalls').textContent= d.firewalls||0;
+    document.getElementById('s-servers').textContent  = d.servers||0;
+
+    const pct = d.totalDevices > 0 ? Math.round((d.onlineDevices/d.totalDevices)*100) : 0;
+    document.getElementById('s-online-pct').textContent = `${pct}% uptime`;
+    document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleTimeString()} • Network availability: ${fmt(d.networkAvailability)}%`;
+
+    // Security score
+    const ss = d.overallSecurityScore || 0;
+    document.getElementById('secScore').textContent = ss;
+    document.getElementById('secLabel').textContent = ss >= 85 ? 'Excellent' : ss >= 70 ? 'Good' : ss >= 50 ? 'Fair' : 'Poor';
+    drawGauge('secGauge', ss);
+
+    // Health metrics
+    document.getElementById('healthMetrics').innerHTML = `
+      ${metricRowHtml('CPU Usage',    d.avgCpuUsage,    'fa-microchip')}
+      ${metricRowHtml('RAM Usage',    d.avgRamUsage,    'fa-memory')}
+      ${metricRowHtml('Bandwidth',    d.avgBandwidthUsage,'fa-wifi')}
+      ${metricRowHtml('Storage',      d.avgStorageUsage,'fa-hdd')}
+      <div class="metric-row">
+        <span class="metric-name"><i class="fas fa-clock" style="color:var(--info);"></i>Avg Latency</span>
+        <span class="metric-val">${fmt(d.avgLatency)}ms</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-name"><i class="fas fa-users" style="color:var(--purple);"></i>Active Users</span>
+        <span class="metric-val">${d.totalUsers||0}</span>
+      </div>`;
+
+    // Device type doughnut
+    buildDeviceTypeChart(d.devicesByType || {});
+
+    // Bandwidth trend
+    buildLineChart('bandwidthChart', d.bandwidthTrend||[], 'Bandwidth %', 'var(--accent)');
+
+    // Alert trend
+    buildLineChart('alertTrendChart', d.alertTrend||[], 'Alerts', 'var(--danger)');
+
+    // Recent alerts
+    renderRecentAlerts(d.recentAlerts||[]);
+
+    // Top devices
+    renderTopDevices(d.topActiveDevices||[]);
+
+    // Activity
+    renderActivity(d.recentActivities||[]);
+
+  } catch(e) {
+    Toast.error('Dashboard Error', e.message);
+  }
+}
+
+function metricRowHtml(label, val, icon) {
+  const color = metricColor(val||0);
+  return `<div class="metric-row">
+    <span class="metric-name"><i class="fas ${icon}" style="color:${color};"></i>${label}</span>
+    <div style="display:flex;align-items:center;gap:10px;flex:1;max-width:220px;margin-left:auto;">
+      <div class="progress-bar-custom" style="flex:1;"><div class="progress-fill" style="width:${val||0}%;background:${color};"></div></div>
+      <span class="metric-val" style="color:${color};width:44px;text-align:right;">${fmt(val||0)}%</span>
+    </div>
+  </div>`;
+}
+
+function buildDeviceTypeChart(data) {
+  const labels = [], vals = [], colors = [];
+  const colorMap = {ROUTER:'#5352ed',SWITCH:'#2ed573',FIREWALL:'#ff4757',SERVER:'#1e90ff',COMPUTER:'#54a0ff',PRINTER:'#ffa502',ACCESS_POINT:'#00d2d3',IOT_DEVICE:'#ff6348',VIRTUAL_MACHINE:'#a29bfe',UNKNOWN:'#636e72'};
+  Object.entries(data).forEach(([k,v]) => {
+    if (v > 0) { labels.push(k.replace(/_/g,' ')); vals.push(v); colors.push(colorMap[k]||'#636e72'); }
+  });
+  if (charts.deviceType) charts.deviceType.destroy();
+  const ctx = document.getElementById('deviceTypeChart').getContext('2d');
+  charts.deviceType = new Chart(ctx, {
+    type:'doughnut',
+    data:{labels, datasets:[{data:vals,backgroundColor:colors,borderWidth:0,hoverOffset:6}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+      plugins:{legend:{position:'right',labels:{boxWidth:10,padding:8,font:{size:10}}},
+               tooltip:{callbacks:{label:c=>`${c.label}: ${c.raw}`}}}}
+  });
+}
+
+function buildLineChart(canvasId, points, label, color) {
+  if (charts[canvasId]) charts[canvasId].destroy();
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const gradient = ctx.createLinearGradient(0,0,0,160);
+  gradient.addColorStop(0, color.replace('var(--accent)','rgba(0,210,211,0.3)').replace('var(--danger)','rgba(255,71,87,0.3)'));
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  charts[canvasId] = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: points.map(p=>p.label),
+      datasets:[{label, data:points.map(p=>p.value),
+        borderColor:color.startsWith('var') ? (color.includes('accent') ? '#00d2d3':'#ff4757') : color,
+        backgroundColor:gradient,borderWidth:2,pointRadius:3,
+        pointBackgroundColor:color.startsWith('var') ? (color.includes('accent') ? '#00d2d3':'#ff4757') : color,
+        fill:true,tension:0.4}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{font:{size:10}}}},
+      plugins:{legend:{display:false}}}
+  });
+}
+
+function drawGauge(canvasId, value) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,160,80);
+  const cx=80, cy=75, r=60, start=Math.PI, end=2*Math.PI;
+  // BG arc
+  ctx.beginPath(); ctx.arc(cx,cy,r,start,end);
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=12; ctx.lineCap='round'; ctx.stroke();
+  // Value arc
+  const pct = Math.min(value,100)/100;
+  const endAngle = start + pct*Math.PI;
+  const grad = ctx.createLinearGradient(0,0,160,0);
+  grad.addColorStop(0,'#6c63ff'); grad.addColorStop(1,'#00d2d3');
+  ctx.beginPath(); ctx.arc(cx,cy,r,start,endAngle);
+  ctx.strokeStyle=grad; ctx.lineWidth=12; ctx.lineCap='round'; ctx.stroke();
+}
+
+function renderRecentAlerts(alerts) {
+  if (!alerts.length) { document.getElementById('recentAlerts').innerHTML='<div style="color:var(--text-muted);text-align:center;padding:20px;">No alerts</div>'; return; }
+  const sevColors = {CRITICAL:'rgba(255,71,87,0.2)',HIGH:'rgba(255,165,2,0.2)',MEDIUM:'rgba(84,160,255,0.2)',LOW:'rgba(46,213,115,0.2)',INFO:'rgba(162,155,254,0.2)'};
+  const sevIcons = {CRITICAL:'fa-fire',HIGH:'fa-exclamation-circle',MEDIUM:'fa-info-circle',LOW:'fa-check-circle',INFO:'fa-info'};
+  const html = alerts.slice(0,8).map(a=>`
+    <div class="alert-quick" onclick="window.location='alerts.html'">
+      <div class="aq-icon" style="background:${sevColors[a.severity]||'var(--glass)'};">
+        <i class="fas ${sevIcons[a.severity]||'fa-bell'}" style="color:${getSevColor(a.severity)};"></i>
+      </div>
+      <div class="aq-body">
+        <strong>${escHtml(a.title)}</strong>
+        <span>${escHtml(a.deviceName||a.deviceIp||'—')}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+        ${severityBadge(a.severity)}
+        <span class="aq-time">${timeAgo(a.createdAt)}</span>
+      </div>
+    </div>`).join('');
+  document.getElementById('recentAlerts').innerHTML = html;
+}
+
+function renderTopDevices(devices) {
+  if (!devices.length) { document.getElementById('topDevices').innerHTML='<div style="color:var(--text-muted);text-align:center;padding:20px;">No data</div>'; return; }
+  const html = devices.slice(0,5).map(d=>`
+    <div class="top-device-row">
+      <div class="top-device-icon"><i class="fas ${deviceTypeIcon(d.deviceType)}"></i></div>
+      <div class="top-device-info">
+        <strong>${escHtml(d.hostname)}</strong>
+        <span>${d.ipAddress} · ${d.deviceType||''}</span>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:0.78rem;color:${metricColor(d.cpuUsage||0)};font-weight:700;">${fmt(d.cpuUsage||0)}%</div>
+        <div style="font-size:0.7rem;color:var(--text-muted);">CPU</div>
+      </div>
+    </div>`).join('');
+  document.getElementById('topDevices').innerHTML = html;
+}
+
+function renderActivity(activities) {
+  if (!activities.length) { document.getElementById('activityFeed').innerHTML='<div style="color:var(--text-muted);text-align:center;padding:20px;grid-column:1/-1;">No recent activity</div>'; return; }
+  const html = activities.map(a=>`
+    <div class="activity-item">
+      <div class="activity-icon" style="background:${a.color||'var(--glass)'}22;"><i class="fas ${a.icon||'fa-info'}" style="color:${a.color||'var(--primary)'};"></i></div>
+      <div class="activity-body" style="flex:1;">
+        <strong>${escHtml(a.action)}</strong>
+        <span>${escHtml(a.description||'')} ${a.user?'· '+escHtml(a.user):''}</span>
+      </div>
+      <div class="activity-time">${a.time||''}</div>
+    </div>`).join('');
+  document.getElementById('activityFeed').innerHTML = html;
+}
+
+function getSevColor(s){return{CRITICAL:'#ff4757',HIGH:'#ffa502',MEDIUM:'#54a0ff',LOW:'#2ed573',INFO:'#a29bfe'}[s]||'#a29bfe';}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+// Load on start and auto-refresh every 15s
+loadDashboard();
+setInterval(loadDashboard, 15000);
+</script>
+</body>
+</html>

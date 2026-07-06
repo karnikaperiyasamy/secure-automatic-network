@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>IP Manager — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<style>
+.ip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:6px;margin-bottom:20px;}
+.ip-cell{height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:700;cursor:pointer;transition:var(--transition);border:1px solid transparent;position:relative;}
+.ip-cell:hover{transform:scale(1.05);z-index:2;}
+.ip-cell.available{background:rgba(46,213,115,0.12);color:#2ed573;border-color:rgba(46,213,115,0.2);}
+.ip-cell.assigned{background:rgba(84,160,255,0.15);color:#54a0ff;border-color:rgba(84,160,255,0.25);}
+.ip-cell.reserved{background:rgba(162,155,254,0.15);color:#a29bfe;border-color:rgba(162,155,254,0.25);}
+.ip-cell.conflicted{background:rgba(255,71,87,0.18);color:#ff4757;border-color:rgba(255,71,87,0.3);animation:blink 1.5s infinite;}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>IP Manager</span></div>
+        <h1 class="page-title"><i class="fas fa-network-wired"></i>IP Address Management</h1>
+        <p class="page-subtitle">Manage IPv4/IPv6 pools, DHCP leases, and detect conflicts</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="detectConflicts()"><i class="fas fa-exclamation-triangle"></i>Detect Conflicts</button>
+        <button class="btn-primary-custom" onclick="openAddIPModal()"><i class="fas fa-plus"></i>Add IP</button>
+      </div>
+    </div>
+
+    <!-- Summary row -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:20px;" id="ipSummary"></div>
+
+    <!-- Subnet selector + visual map -->
+    <div class="card-glass" style="margin-bottom:16px;">
+      <div class="card-header-custom">
+        <span class="card-title-custom"><i class="fas fa-map" style="color:var(--primary);"></i>Subnet Visual Map</span>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="subnetSelect" class="form-control-custom" style="width:auto;font-size:0.82rem;" onchange="renderIPMap()">
+            <option value="192.168.1">192.168.1.x</option>
+            <option value="192.168.0">192.168.0.x</option>
+            <option value="10.0.0">10.0.0.x</option>
+          </select>
+          <div style="display:flex;gap:10px;font-size:0.72rem;">
+            <span style="display:flex;align-items:center;gap:4px;color:#2ed573;"><span style="width:10px;height:10px;background:rgba(46,213,115,0.3);border-radius:3px;display:inline-block;"></span>Available</span>
+            <span style="display:flex;align-items:center;gap:4px;color:#54a0ff;"><span style="width:10px;height:10px;background:rgba(84,160,255,0.3);border-radius:3px;display:inline-block;"></span>Assigned</span>
+            <span style="display:flex;align-items:center;gap:4px;color:#a29bfe;"><span style="width:10px;height:10px;background:rgba(162,155,254,0.3);border-radius:3px;display:inline-block;"></span>Reserved</span>
+            <span style="display:flex;align-items:center;gap:4px;color:#ff4757;"><span style="width:10px;height:10px;background:rgba(255,71,87,0.3);border-radius:3px;display:inline-block;"></span>Conflict</span>
+          </div>
+        </div>
+      </div>
+      <div class="card-body-custom">
+        <div class="ip-grid" id="ipMapGrid"></div>
+      </div>
+    </div>
+
+    <!-- IP table -->
+    <div class="card-glass">
+      <div class="card-header-custom">
+        <span class="card-title-custom"><i class="fas fa-list" style="color:var(--accent);"></i>IP Address Pool</span>
+        <div style="display:flex;gap:8px;">
+          <input type="search" id="ipSearch" class="form-control-custom" placeholder="Search IP, hostname…" style="width:220px;" oninput="filterIPTable(this.value)"/>
+          <select id="ipStatusFilter" class="form-control-custom" style="width:auto;" onchange="filterIPTable()">
+            <option value="">All</option><option>AVAILABLE</option><option>ASSIGNED</option><option>RESERVED</option><option>CONFLICTED</option>
+          </select>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="table-custom">
+          <thead><tr><th>IP Address</th><th>Status</th><th>Type</th><th>Hostname</th><th>MAC</th><th>Assigned To</th><th>VLAN</th><th>Subnet</th><th>Actions</th></tr></thead>
+          <tbody id="ipTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add IP Modal -->
+<div class="modal-overlay" id="addIpModal" onclick="if(event.target===this)closeModal('addIpModal')">
+  <div class="modal-box" style="max-width:440px;">
+    <div class="modal-title"><i class="fas fa-plus" style="color:var(--primary);"></i>Add IP Address</div>
+    <form id="addIpForm" onsubmit="submitAddIp(event)">
+      <div class="form-group"><label class="form-label-custom">IP Address</label><input id="ip-address" class="form-control-custom" placeholder="192.168.1.100" required/></div>
+      <div class="form-group"><label class="form-label-custom">Subnet</label><input id="ip-subnet" class="form-control-custom" placeholder="192.168.1.0/24" value="192.168.1.0/24"/></div>
+      <div class="form-group"><label class="form-label-custom">Gateway</label><input id="ip-gateway" class="form-control-custom" placeholder="192.168.1.1"/></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label class="form-label-custom">Type</label>
+          <select id="ip-type" class="form-control-custom"><option value="STATIC">Static</option><option value="DYNAMIC">Dynamic</option></select>
+        </div>
+        <div class="form-group"><label class="form-label-custom">VLAN</label><input id="ip-vlan" type="number" class="form-control-custom" value="1"/></div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--text-secondary);">
+          <input type="checkbox" id="ip-reserved"/> Reserve this IP (don't allow auto-assignment)
+        </label>
+      </div>
+      <div class="form-group"><label class="form-label-custom">Description</label><input id="ip-description" class="form-control-custom" placeholder="Optional note"/></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn-ghost" onclick="closeModal('addIpModal')">Cancel</button>
+        <button type="submit" class="btn-primary-custom"><i class="fas fa-save"></i>Add IP</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Subnet Calculator -->
+<div style="position:fixed;bottom:24px;right:24px;z-index:800;">
+  <div class="card-glass" style="padding:14px;min-width:240px;display:none;" id="calcPanel">
+    <div style="font-size:0.85rem;font-weight:700;margin-bottom:10px;"><i class="fas fa-calculator" style="color:var(--primary);"></i> Subnet Calculator</div>
+    <div class="form-group"><label class="form-label-custom">IP / CIDR</label><input id="calcInput" class="form-control-custom" placeholder="192.168.1.0/24" oninput="calcSubnet(this.value)"/></div>
+    <div id="calcResult" style="font-size:0.78rem;color:var(--text-secondary);"></div>
+  </div>
+  <button class="btn-primary-custom" style="border-radius:50%;width:48px;height:48px;padding:0;justify-content:center;" onclick="document.getElementById('calcPanel').style.display=document.getElementById('calcPanel').style.display==='none'?'block':'none'">
+    <i class="fas fa-calculator"></i>
+  </button>
+</div>
+
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('ipmanager','IP Manager')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let ipData = [];
+
+async function loadIPData() {
+  try {
+    // Combine real device IPs with the managed IP pool from the backend
+    const [devicesRes, poolRes] = await Promise.all([
+      API.devices.list(orgId, 0, 200),
+      API.ip.list(orgId).catch(() => [])
+    ]);
+    const devices = devicesRes?.content || [];
+    const pool = poolRes || [];
+
+    const assignedIPs = new Set(devices.map(d=>d.ipAddress));
+    ipData = devices.map(d=>({
+      id: null, fromDevice: true,
+      ipAddress: d.ipAddress,
+      hostname: d.hostname,
+      macAddress: d.macAddress||'—',
+      status: d.status==='OFFLINE' ? 'AVAILABLE' : 'ASSIGNED',
+      type: d.isDhcp ? 'DYNAMIC' : 'STATIC',
+      assignedTo: d.hostname,
+      vlanId: d.vlanId||1,
+      subnet: d.subnet||'192.168.1.0/24',
+      description: d.description||''
+    }));
+
+    // Add entries created via "Add IP" (managed pool) that aren't already a device
+    pool.forEach(p => {
+      if (!assignedIPs.has(p.ipAddress)) {
+        ipData.push({
+          id: p.id, fromDevice: false,
+          ipAddress: p.ipAddress,
+          hostname: p.hostname||'—',
+          macAddress: p.macAddress||'—',
+          status: p.status,
+          type: p.type,
+          assignedTo: p.assignedTo||'—',
+          vlanId: p.vlanId||1,
+          subnet: p.subnet||'192.168.1.0/24',
+          description: p.description||''
+        });
+        assignedIPs.add(p.ipAddress);
+      }
+    });
+
+    // Fill in the rest of the visual subnet map with available IPs
+    const subnet = '192.168.1';
+    for (let i=2;i<=254;i++) {
+      const ip=`${subnet}.${i}`;
+      if (!assignedIPs.has(ip) && ipData.length < 80) {
+        ipData.push({ id:null, fromDevice:false, ipAddress:ip, status:'AVAILABLE', type:'DYNAMIC', hostname:'—', macAddress:'—', assignedTo:'—', vlanId:1, subnet:'192.168.1.0/24' });
+      }
+    }
+
+    renderIPSummary();
+    renderIPTable(ipData);
+    renderIPMap();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function renderIPSummary() {
+  const total = ipData.length;
+  const avail = ipData.filter(i=>i.status==='AVAILABLE').length;
+  const assigned = ipData.filter(i=>i.status==='ASSIGNED').length;
+  const reserved = ipData.filter(i=>i.status==='RESERVED').length;
+  const conflict = ipData.filter(i=>i.status==='CONFLICTED').length;
+  const usePct = total ? Math.round((assigned/total)*100) : 0;
+  document.getElementById('ipSummary').innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;">
+      <div style="font-size:1.6rem;font-weight:800;color:var(--primary);">${total}</div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);">Total IPs</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;">
+      <div style="font-size:1.6rem;font-weight:800;color:var(--success);">${avail}</div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);">Available</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;">
+      <div style="font-size:1.6rem;font-weight:800;color:var(--info);">${assigned}</div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);">Assigned (${usePct}%)</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;">
+      <div style="font-size:1.6rem;font-weight:800;color:var(--purple);">${reserved}</div>
+      <div style="font-size:0.74rem;color:var(--text-secondary);">Reserved</div>
+    </div>
+    ${conflict?`<div style="background:rgba(255,71,87,0.1);border:1px solid rgba(255,71,87,0.3);border-radius:12px;padding:14px;text-align:center;">
+      <div style="font-size:1.6rem;font-weight:800;color:var(--danger);">${conflict}</div>
+      <div style="font-size:0.74rem;color:var(--danger);">⚠ Conflicts!</div>
+    </div>`:''}`;
+}
+
+function renderIPMap() {
+  const subnet = document.getElementById('subnetSelect').value;
+  const grid = document.getElementById('ipMapGrid');
+  let html = '';
+  for (let i=1; i<=254; i++) {
+    const ip = `${subnet}.${i}`;
+    const entry = ipData.find(d=>d.ipAddress===ip);
+    const status = entry?.status || 'available';
+    const cls = status.toLowerCase();
+    const title = entry ? `${ip}\n${entry.hostname||'—'}\n${entry.macAddress||'—'}` : `${ip} — Available`;
+    html += `<div class="ip-cell ${cls}" title="${title}" onclick="showIPDetail('${ip}')">.${i}</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+function renderIPTable(data) {
+  if (!data.length) { document.getElementById('ipTableBody').innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--text-muted);">No IP data</td></tr>'; return; }
+  const statColors = {AVAILABLE:'badge-online',ASSIGNED:'badge-unknown',RESERVED:'sev-info',CONFLICTED:'badge-critical'};
+  document.getElementById('ipTableBody').innerHTML = data.slice(0,50).map(ip=>`
+    <tr>
+      <td><code style="background:var(--glass);padding:2px 7px;border-radius:5px;">${ip.ipAddress}</code></td>
+      <td><span class="badge-status ${statColors[ip.status]||'badge-unknown'}"><span class="status-dot-sm ${ip.status==='AVAILABLE'?'dot-online':ip.status==='CONFLICTED'?'dot-critical':''}"></span>${ip.status}</span></td>
+      <td><span class="chip" style="font-size:0.7rem;">${ip.type||'DYNAMIC'}</span></td>
+      <td style="font-size:0.83rem;">${ip.hostname||'—'}</td>
+      <td style="font-size:0.75rem;color:var(--text-secondary);">${ip.macAddress||'—'}</td>
+      <td style="font-size:0.82rem;">${ip.assignedTo||'—'}</td>
+      <td style="font-size:0.8rem;">${ip.vlanId||1}</td>
+      <td style="font-size:0.78rem;color:var(--text-secondary);">${ip.subnet||'—'}</td>
+      <td>
+        <div style="display:flex;gap:5px;">
+          <div class="btn-icon" onclick="showIPDetail('${ip.ipAddress}')"><i class="fas fa-eye"></i></div>
+          ${ip.status==='AVAILABLE'?`<div class="btn-icon" onclick="reserveIP('${ip.ipAddress}')"><i class="fas fa-bookmark" style="color:var(--purple);"></i></div>`:''}
+          ${!ip.fromDevice && ip.id?`<div class="btn-icon" onclick="deleteIPEntry(${ip.id})"><i class="fas fa-trash" style="color:var(--danger);"></i></div>`:''}
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function filterIPTable(q) {
+  const query = (typeof q==='string'?q:document.getElementById('ipSearch').value).toLowerCase();
+  const status = document.getElementById('ipStatusFilter').value;
+  const filtered = ipData.filter(ip=>
+    (!query || ip.ipAddress.includes(query) || (ip.hostname||'').toLowerCase().includes(query)) &&
+    (!status || ip.status===status)
+  );
+  renderIPTable(filtered);
+}
+
+function showIPDetail(ip) {
+  const entry = ipData.find(d=>d.ipAddress===ip);
+  if (!entry) { Toast.info('IP', `${ip} — Available`); return; }
+  alert(`IP: ${entry.ipAddress}\nHostname: ${entry.hostname||'—'}\nMAC: ${entry.macAddress||'—'}\nStatus: ${entry.status}\nType: ${entry.type||'DYNAMIC'}\nVLAN: ${entry.vlanId||1}`);
+}
+
+async function reserveIP(ip) {
+  const entry = ipData.find(d=>d.ipAddress===ip);
+  try {
+    if (entry && entry.id) {
+      await API.ip.reserve(entry.id);
+    } else {
+      // Not yet in the managed pool — create it as a reserved entry
+      await API.ip.add(orgId, { ipAddress: ip, reserved: true, type: 'RESERVED' });
+    }
+    Toast.success('Reserved', `${ip} has been reserved`);
+    loadIPData();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function openAddIPModal() {
+  document.getElementById('addIpForm').reset();
+  document.getElementById('ip-subnet').value = '192.168.1.0/24';
+  document.getElementById('ip-vlan').value = 1;
+  showModal('addIpModal');
+}
+
+async function submitAddIp(e) {
+  e.preventDefault();
+  const payload = {
+    ipAddress: document.getElementById('ip-address').value.trim(),
+    subnet: document.getElementById('ip-subnet').value.trim(),
+    gateway: document.getElementById('ip-gateway').value.trim(),
+    type: document.getElementById('ip-type').value,
+    vlanId: parseInt(document.getElementById('ip-vlan').value)||1,
+    reserved: document.getElementById('ip-reserved').checked,
+    description: document.getElementById('ip-description').value.trim()
+  };
+  try {
+    await API.ip.add(orgId, payload);
+    Toast.success('IP Added', payload.ipAddress);
+    closeModal('addIpModal');
+    loadIPData();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function deleteIPEntry(id) {
+  if (!confirm('Remove this IP from the pool?')) return;
+  try {
+    await API.ip.delete(id);
+    Toast.success('Removed');
+    loadIPData();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+async function detectConflicts() {
+  try {
+    const res = await API.ip.conflicts(orgId);
+    const conflicts = res?.conflicts || [];
+    if (conflicts.length) Toast.warning('Conflicts Detected', `Duplicate IPs: ${conflicts.join(', ')}`);
+    else Toast.success('No Conflicts', 'All IP addresses are unique');
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function calcSubnet(cidr) {
+  if (!cidr.includes('/')) return;
+  const [ip, prefix] = cidr.split('/');
+  const p = parseInt(prefix);
+  if (isNaN(p)||p<0||p>32) return;
+  const hosts = Math.pow(2,32-p)-2;
+  const mask = ~(Math.pow(2,32-p)-1)>>>0;
+  document.getElementById('calcResult').innerHTML = `
+    <div>Hosts: <strong>${hosts.toLocaleString()}</strong></div>
+    <div>Subnet Mask: <strong>${[(mask>>>24)&255,(mask>>>16)&255,(mask>>>8)&255,mask&255].join('.')}</strong></div>
+    <div>Prefix: <strong>/${p}</strong></div>`;
+}
+
+loadIPData();
+</script>
+</body>
+</html>

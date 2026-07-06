@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Live Monitoring — SANTMS</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+<link href="../css/main.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.monitor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:20px;}
+.device-monitor-card{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px;transition:var(--transition);cursor:pointer;}
+.device-monitor-card:hover{border-color:var(--primary);box-shadow:var(--glow);transform:translateY(-2px);}
+.device-monitor-card.offline{opacity:0.6;border-color:rgba(255,71,87,0.2);}
+.dm-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;}
+.dm-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1rem;}
+.dm-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+.dm-metric{background:var(--glass);border-radius:8px;padding:8px;text-align:center;}
+.dm-metric .v{font-size:1.1rem;font-weight:800;}
+.dm-metric .l{font-size:0.68rem;color:var(--text-secondary);}
+.dm-sparkline{height:40px;margin-top:8px;}
+</style>
+</head>
+<body>
+<div id="sidebar-container"></div>
+<div class="main-content">
+  <div id="header-container"></div>
+  <div class="page-body">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div class="breadcrumb-custom"><a href="dashboard.html">Dashboard</a><i class="fas fa-chevron-right"></i><span>Monitoring</span></div>
+        <h1 class="page-title"><i class="fas fa-chart-line"></i>Live Network Monitoring</h1>
+        <p class="page-subtitle">Real-time device metrics — auto-refreshes every 10 seconds</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--success);">
+          <div style="width:7px;height:7px;background:#2ed573;border-radius:50%;box-shadow:0 0 6px #2ed573;animation:blink 2s infinite;"></div>
+          Live
+        </div>
+        <select id="sortBy" class="form-control-custom" style="width:auto;font-size:0.82rem;" onchange="renderMonitor()">
+          <option value="cpu">Sort: CPU</option>
+          <option value="ram">Sort: RAM</option>
+          <option value="latency">Sort: Latency</option>
+          <option value="name">Sort: Name</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Summary bar -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;" id="monSummary"></div>
+
+    <!-- Device cards grid -->
+    <div class="monitor-grid" id="monitorGrid">
+      <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);"><i class="fas fa-spinner fa-spin"></i> Loading devices…</div>
+    </div>
+  </div>
+</div>
+<script src="../js/app.js"></script>
+<script>
+if (!initPage('monitoring','Monitoring')) throw new Error('Not auth');
+const orgId = Auth.getOrgId();
+let devices=[], sparkData={};
+
+async function loadMonitor() {
+  try {
+    const res = await API.devices.list(orgId, 0, 50);
+    devices = res?.content || [];
+    updateSummary();
+    renderMonitor();
+  } catch(e) { Toast.error('Error', e.message); }
+}
+
+function updateSummary() {
+  const online=devices.filter(d=>d.status==='ONLINE').length;
+  const avgCpu=devices.reduce((s,d)=>s+(d.cpuUsage||0),0)/(devices.length||1);
+  const avgRam=devices.reduce((s,d)=>s+(d.ramUsage||0),0)/(devices.length||1);
+  const critical=devices.filter(d=>d.status==='CRITICAL').length;
+  document.getElementById('monSummary').innerHTML=`
+    <div class="chip" style="background:rgba(46,213,115,0.15);border-color:rgba(46,213,115,0.3);color:#2ed573;"><i class="fas fa-check-circle"></i>Online: <strong>${online}/${devices.length}</strong></div>
+    <div class="chip" style="background:rgba(108,99,255,0.15);border-color:rgba(108,99,255,0.3);color:var(--primary);"><i class="fas fa-microchip"></i>Avg CPU: <strong>${fmt(avgCpu)}%</strong></div>
+    <div class="chip" style="background:rgba(0,210,211,0.15);border-color:rgba(0,210,211,0.3);color:var(--accent);"><i class="fas fa-memory"></i>Avg RAM: <strong>${fmt(avgRam)}%</strong></div>
+    ${critical>0?`<div class="chip" style="background:rgba(255,71,87,0.15);border-color:rgba(255,71,87,0.3);color:#ff4757;"><i class="fas fa-exclamation-triangle"></i>Critical: <strong>${critical}</strong></div>`:''}`;
+}
+
+function renderMonitor() {
+  const sort = document.getElementById('sortBy').value;
+  const sorted = [...devices].sort((a,b)=>{
+    if(sort==='cpu') return (b.cpuUsage||0)-(a.cpuUsage||0);
+    if(sort==='ram') return (b.ramUsage||0)-(a.ramUsage||0);
+    if(sort==='latency') return (b.latencyMs||0)-(a.latencyMs||0);
+    return a.hostname?.localeCompare(b.hostname);
+  });
+
+  if (!sorted.length) {
+    document.getElementById('monitorGrid').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">No devices found. Run a network scan first.</div>';
+    return;
+  }
+
+  document.getElementById('monitorGrid').innerHTML = sorted.map(d => {
+    const tcol = typeColor(d.deviceType);
+    const offline = d.status==='OFFLINE';
+    if (!sparkData[d.id]) sparkData[d.id] = { cpu:[], ram:[] };
+    sparkData[d.id].cpu.push(d.cpuUsage||0);
+    sparkData[d.id].ram.push(d.ramUsage||0);
+    if (sparkData[d.id].cpu.length>10) { sparkData[d.id].cpu.shift(); sparkData[d.id].ram.shift(); }
+
+    return `<div class="device-monitor-card ${offline?'offline':''}" onclick="window.location='devices.html'">
+      <div class="dm-header">
+        <div>
+          <div style="font-weight:700;font-size:0.9rem;">${escHtml(d.hostname)}</div>
+          <div style="font-size:0.72rem;color:var(--text-secondary);">${d.ipAddress}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+          ${statusBadge(d.status)}
+          <div class="dm-icon" style="background:${tcol}18;color:${tcol};width:28px;height:28px;border-radius:7px;">
+            <i class="fas ${deviceTypeIcon(d.deviceType)}" style="font-size:0.75rem;"></i>
+          </div>
+        </div>
+      </div>
+      <div class="dm-metrics">
+        <div class="dm-metric">
+          <div class="v" style="color:${metricColor(d.cpuUsage||0)};">${fmt(d.cpuUsage||0)}%</div>
+          <div class="l">CPU</div>
+        </div>
+        <div class="dm-metric">
+          <div class="v" style="color:${metricColor(d.ramUsage||0)};">${fmt(d.ramUsage||0)}%</div>
+          <div class="l">RAM</div>
+        </div>
+        <div class="dm-metric">
+          <div class="v" style="color:${d.latencyMs>50?'var(--warning)':'var(--success)'};">${fmt(d.latencyMs||0)}</div>
+          <div class="l">ms Latency</div>
+        </div>
+        <div class="dm-metric">
+          <div class="v" style="color:${metricColor(d.temperature||0)};">${fmt(d.temperature||0)}°</div>
+          <div class="l">Temp</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-secondary);margin-bottom:3px;">
+          <span>Bandwidth</span><span>${fmt(d.bandwidthUsage||0)}%</span>
+        </div>
+        <div class="progress-bar-custom"><div class="progress-fill" style="width:${d.bandwidthUsage||0}%;background:${metricColor(d.bandwidthUsage||0)};"></div></div>
+      </div>
+      <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-secondary);">
+        <span>Avail: ${fmt(d.availabilityPercent||100)}%</span>
+        <span>Loss: ${fmt(d.packetLoss||0)}%</span>
+        <span>${timeAgo(d.lastSeen)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function typeColor(t){return{ROUTER:'#5352ed',SWITCH:'#2ed573',FIREWALL:'#ff4757',SERVER:'#1e90ff',COMPUTER:'#54a0ff',PRINTER:'#ffa502',ACCESS_POINT:'#00d2d3',IOT_DEVICE:'#ff6348',VIRTUAL_MACHINE:'#a29bfe'}[t]||'#636e72';}
+function escHtml(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+
+loadMonitor();
+setInterval(loadMonitor, 10000);
+</script>
+</body>
+</html>
