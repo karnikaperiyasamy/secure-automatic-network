@@ -2,7 +2,7 @@ package com.santms.controller;
 
 import com.santms.dto.request.AuthDTOs.RegisterRequest;
 import com.santms.dto.response.AuthResponseDTOs.UserInfo;
-import com.santms.entity.AuditLog;
+//import com.santms.entity.AuditLog;
 import com.santms.entity.User;
 import com.santms.repository.AuditLogRepository;
 import com.santms.service.impl.UserService;
