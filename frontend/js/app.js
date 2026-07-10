@@ -2,7 +2,7 @@
    SANTMS — Shared Utilities & API Service
    ===================================================== */
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'https://your-backend-service.onrender.com/api';
 
 /* -------- Theme (applies saved dark/light preference on EVERY page) -------- */
 // Previously only login.html applied localStorage('theme'); every other page
